@@ -2,7 +2,7 @@
 
 ## Milestone boundary
 
-Milestone 1 implements reports, suggested matches, duplicate warnings, student login, private text evidence and competing PENDING claims. Milestone 2 will add staff verification, recorded decisions, disputes and physical handover. The future workflow below is a design, not an implemented feature.
+Milestone 1 implements reports, suggested matches, duplicate warnings, demo student sessions, private text evidence and competing PENDING claims. Milestone 2 will add staff verification, recorded decisions, disputes and physical handover. The future workflow below is a design, not an implemented feature.
 
 ## Matching — implemented
 
@@ -20,18 +20,18 @@ A possible duplicate has the same type, category, zone and case-insensitive trim
 
 Public fields: general description, category, campus zone, date, report ID and status. Students are instructed to withhold contents, serial numbers, unique marks and contact information. Automatic redaction is not implemented; students must follow the form guidance.
 
-Private fields: password hashes and claim evidence. A student can read only their own claims; public DTOs never include evidence. The current app has no staff evidence-view endpoint and no upload endpoint. Future staff access needs role checks and audit records. Future attachments need private storage and size/type validation; never put evidence into the static directory.
+Claim evidence is hidden from public reports. Each selected demo account can read its own claims, but anyone can select that account. Use fictional evidence only. The dummy login does not verify identity or protect real personal data. The current app has no staff evidence-view endpoint and no upload endpoint. Future staff access needs role checks and audit records. Future attachments need private storage and size/type validation; never put evidence into the static directory.
 
 ## Permissions
 
 | Actor | Implemented | Planned |
 | --- | --- | --- |
-| Visitor | Browse general details; register/sign in | No private data access |
+| Visitor | Browse general details; choose a demo student | No private data access |
 | Student | Submit reports, retrieve own matches, submit/read own private pending claims | Withdraw a claim; read own decision reasons |
 | Security | No staff role/interface yet | Record custody, review evidence, record decisions/reasons, confirm handover |
 | Administrator | No admin role/interface yet | Provision staff, resolve disputes, link duplicates, inspect audit history |
 
-Every registered account receives STUDENT authority. Registration rejects unknown fields, including role injection. Staff provisioning must be a trusted process in the next milestone.
+Only the three preset demo students can be selected. Each receives STUDENT authority; arbitrary account keys and role fields are rejected. Password login and registration are disabled. Real student and administrator authentication will be implemented later.
 
 ## Status model
 
@@ -115,14 +115,14 @@ flowchart TD
 
 Working milestone 1 demonstration:
 
-1. With seed data enabled, register Alice. Report a LOST black backpack in BAGS at LIBRARY. Use a date on or before the sample FOUND backpack date and within 14 days.
+1. With seed data enabled, select Mayank from Demo login. Report a LOST black backpack in BAGS at LIBRARY. Use a date on or before the sample FOUND backpack date and within 14 days.
 2. Select My reports → Find matches. Explain the ranking. Add a report in a category without an opposite report to demonstrate no match.
-3. Claim the sample found backpack with private details. Show PENDING and an OPEN report. A second claim by Alice fails.
-4. Sign out, register Bob and submit a different claim for the same item. Both claims remain pending. Each student sees only their own evidence.
+3. Claim the sample found backpack with private details. Show PENDING and an OPEN report. A second claim by Mayank fails.
+4. Sign out, select Bob and submit a different claim for the same item. Both claims remain pending. Each student sees only their own evidence.
 5. Submit an identical report to demonstrate the duplicate warning and retained reports.
 6. Explain that staff decisions and handover are the next milestone, with no fake approval or recovery action.
 
-Next-review target after milestone 2: Alice correctly identifies a hidden green notebook and violet stitching; Bob gives inconsistent details. Security records Bob's rejection reason and Alice's approval reason. The reports remain open before collection. On confirmed physical receipt, record one handover, mark RECOVERED and close linked reports. Retry handover, including through a duplicate report, and demonstrate rejection of a second release.
+Next-review target after milestone 2: Mayank correctly identifies a hidden green notebook and violet stitching; Bob gives inconsistent details. Security records Bob's rejection reason and Mayank's approval reason. The reports remain open before collection. On confirmed physical receipt, record one handover, mark RECOVERED and close linked reports. Retry handover, including through a duplicate report, and demonstrate rejection of a second release.
 
 The complete verification/handover demonstration requested by the teacher is an acceptance target for milestone 2, not a working milestone 1 feature.
 
@@ -136,8 +136,8 @@ Automated coverage in this milestone:
 - Competing claims, repeated claims, claims remaining pending and reports remaining open.
 - Own-item and lost-report claim restrictions.
 - Evidence omitted from public reports and isolated between users.
-- Report-owner match access, session login, anonymous access restrictions and CSRF.
-- Password hashing, role injection rejection, future dates and missing evidence.
+- Report-owner match access, demo sessions, anonymous access restrictions and CSRF.
+- Demo-account switching, session persistence/logout, role injection rejection, disabled password endpoints, future dates and missing evidence.
 
 Milestone 2 acceptance tests, not implemented:
 

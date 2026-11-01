@@ -7,7 +7,6 @@ import java.time.*;
 import java.util.*;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -16,10 +15,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestController @RequestMapping("/api")
 class Api {
-    private final Users users; private final Reports reports; private final Claims claims; private final PasswordEncoder encoder;
-    Api(Users users, Reports reports, Claims claims, PasswordEncoder encoder) { this.users=users; this.reports=reports; this.claims=claims; this.encoder=encoder; }
-    record Registration(@NotBlank @Size(max=80) String name, @NotBlank @Email @Size(max=180) String email,
-                        @NotBlank @Size(min=10,max=64) String password) {}
+    private final Users users; private final Reports reports; private final Claims claims;
+    Api(Users users, Reports reports, Claims claims) { this.users=users; this.reports=reports; this.claims=claims; }
     record ReportInput(@NotBlank @Pattern(regexp="LOST|FOUND") String kind,
                        @NotBlank @Size(min=3,max=100) String title, @NotBlank String category,
                        @NotBlank String location, @NotNull @PastOrPresent LocalDate eventDate,
@@ -36,16 +33,6 @@ class Api {
     @GetMapping("/health") Map<String,String> health() { return Map.of("status","UP","milestone","1"); }
     @GetMapping("/csrf") Map<String,String> csrf(CsrfToken token) { return Map.of("token",token.getToken(),"headerName",token.getHeaderName()); }
     @GetMapping("/options") Map<String,Object> options() { return Map.of("categories",MatchingService.CATEGORIES,"locations",MatchingService.LOCATIONS); }
-    @PostMapping("/auth/register") @ResponseStatus(HttpStatus.CREATED)
-    Map<String,String> register(@Valid @RequestBody Registration input) {
-        String email=input.email().strip().toLowerCase(Locale.ROOT);
-        if (users.existsByEmail(email)) throw new ResponseStatusException(HttpStatus.CONFLICT,"This email cannot be registered. Try signing in.");
-
-        if (input.password().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Password must fit within 72 UTF-8 bytes.");
-        users.save(new CampusUser(input.name().strip(),email,encoder.encode(input.password())));
-        return Map.of("message","Account created. You can now sign in.");
-    }
     @GetMapping("/me") UserView me(Principal p) { CampusUser u=current(p); return new UserView(u.id,u.name,"STUDENT"); }
     @GetMapping("/reports") List<ReportView> browse() { return reports.findTop200ByOrderByCreatedAtDesc().stream().map(Api::view).toList(); }
     @GetMapping("/me/reports") List<ReportView> mine(Principal p) { return reports.findByOwnerIdOrderByCreatedAtDesc(current(p).id).stream().map(Api::view).toList(); }

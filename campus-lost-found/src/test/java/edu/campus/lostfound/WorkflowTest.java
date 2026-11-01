@@ -9,7 +9,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -24,13 +23,12 @@ class WorkflowTest {
     @Autowired Users users;
     @Autowired Reports reports;
     @Autowired Claims claims;
-    @Autowired PasswordEncoder passwords;
-    Long finder, alice;
+    Long finder, mayank;
     @BeforeEach void setup() {
         claims.deleteAll(); reports.deleteAll(); users.deleteAll();
-        finder=users.save(new CampusUser("Finder","finder@example.test",passwords.encode("safe-password-123"))).id;
-        alice=users.save(new CampusUser("Alice","alice@example.test",passwords.encode("safe-password-123"))).id;
-        users.save(new CampusUser("Bob","bob@example.test",passwords.encode("safe-password-123")));
+        finder=users.save(new CampusUser("Finder","finder@example.test","UNUSED")).id;
+        mayank=users.save(new CampusUser("Mayank","mayank@example.test","UNUSED")).id;
+        users.save(new CampusUser("Bob","bob@example.test","UNUSED"));
     }
     ItemReport report(String kind, Long owner) {
         return reports.save(new ItemReport(owner,new Api.ReportInput(kind,"Black backpack","BAGS","LIBRARY",LocalDate.now().minusDays(1),"A black backpack near the entrance")));
@@ -38,13 +36,13 @@ class WorkflowTest {
     String evidence() throws Exception { return json.writeValueAsString(Map.of("privateDetails","Hidden violet stitching and a small green notebook inside.")); }
     @Test void competingClaimsStayPendingAndPrivateAndCannotBeRepeated() throws Exception {
         Long id=report("FOUND",finder).id;
-        mvc.perform(post("/api/reports/"+id+"/claims").with(user("alice@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(evidence()))
+        mvc.perform(post("/api/reports/"+id+"/claims").with(user("mayank@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(evidence()))
             .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("PENDING"));
         mvc.perform(post("/api/reports/"+id+"/claims").with(user("bob@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(evidence()))
             .andExpect(status().isCreated());
-        mvc.perform(post("/api/reports/"+id+"/claims").with(user("alice@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(evidence()))
+        mvc.perform(post("/api/reports/"+id+"/claims").with(user("mayank@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(evidence()))
             .andExpect(status().isConflict());
-        mvc.perform(get("/api/me/claims").with(user("alice@example.test")))
+        mvc.perform(get("/api/me/claims").with(user("mayank@example.test")))
             .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].privateDetails").exists());
         mvc.perform(get("/api/me/claims").with(user("finder@example.test")))
             .andExpect(status().isOk()).andExpect(content().json("[]"));
@@ -59,51 +57,76 @@ class WorkflowTest {
         Long lost=report("LOST",finder).id;
         mvc.perform(post("/api/reports/"+found+"/claims").with(user("finder@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(evidence()))
             .andExpect(status().isConflict());
-        mvc.perform(post("/api/reports/"+lost+"/claims").with(user("alice@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(evidence()))
+        mvc.perform(post("/api/reports/"+lost+"/claims").with(user("mayank@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(evidence()))
             .andExpect(status().isConflict());
     }
     @Test void matchesRequireReportOwnershipAndHandleNoMatch() throws Exception {
-        Long id=report("LOST",alice).id;
-        mvc.perform(get("/api/reports/"+id+"/matches").with(user("alice@example.test")))
+        Long id=report("LOST",mayank).id;
+        mvc.perform(get("/api/reports/"+id+"/matches").with(user("mayank@example.test")))
             .andExpect(status().isOk()).andExpect(content().json("[]"));
         report("FOUND",finder);
-        mvc.perform(get("/api/reports/"+id+"/matches").with(user("alice@example.test")))
+        mvc.perform(get("/api/reports/"+id+"/matches").with(user("mayank@example.test")))
             .andExpect(status().isOk()).andExpect(jsonPath("$[0].score").value(100));
         mvc.perform(get("/api/reports/"+id+"/matches").with(user("bob@example.test")))
             .andExpect(status().isForbidden());
     }
     @Test void duplicatesAreFlaggedAndRetained() throws Exception {
-        report("LOST",alice);
+        report("LOST",mayank);
         String body=json.writeValueAsString(new Api.ReportInput("LOST","Black backpack","BAGS","LIBRARY",LocalDate.now().minusDays(1),"A black backpack near the entrance"));
-        mvc.perform(post("/api/reports").with(user("alice@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
+        mvc.perform(post("/api/reports").with(user("mayank@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated()).andExpect(jsonPath("$.possibleDuplicates.length()").value(1));
         assertThat(reports.count()).isEqualTo(2);
     }
-    @Test void loginWorksAndPrivateEndpointsAndWritesAreProtected() throws Exception {
+    @Test void demoLoginPersistsAndLogoutClearsTheSession() throws Exception {
         mvc.perform(get("/api/me/claims")).andExpect(status().isUnauthorized());
-        mvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content("{}"))
+        mvc.perform(post("/api/auth/demo").contentType(MediaType.APPLICATION_JSON).content("{\"account\":\"mayank\"}"))
             .andExpect(status().isForbidden());
-        mvc.perform(post("/api/auth/login").with(csrf()).param("username","alice@example.test").param("password","wrong"))
-            .andExpect(status().isUnauthorized());
-        var result=mvc.perform(post("/api/auth/login").with(csrf()).param("username","alice@example.test").param("password","safe-password-123"))
-            .andExpect(status().isOk()).andReturn();
-        mvc.perform(get("/api/me").session((MockHttpSession)result.getRequest().getSession(false)))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Alice"));
+        var result=mvc.perform(post("/api/auth/demo").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"account\":\"mayank\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.role").value("STUDENT")).andReturn();
+        var session=(MockHttpSession)result.getRequest().getSession(false);
+        mvc.perform(get("/api/me").session(session))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Mayank (demo student)"));
+        mvc.perform(post("/api/auth/logout").session(session).with(csrf())).andExpect(status().isNoContent());
+        mvc.perform(get("/api/me")).andExpect(status().isUnauthorized());
     }
-    @Test void registrationValidatesPasswordAndDoesNotAcceptRoleEscalation() throws Exception {
-        mvc.perform(post("/api/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
-            .content(json.writeValueAsString(Map.of("name","New Student","email","new@example.test","password","strong-pass-123"))))
-            .andExpect(status().isCreated());
-        assertThat(passwords.matches("strong-pass-123",users.findByEmail("new@example.test").orElseThrow().passwordHash)).isTrue();
-        mvc.perform(post("/api/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
-            .content("{\"name\":\"Student\",\"email\":\"other@example.test\",\"password\":\"strong-pass-123\",\"role\":\"ADMIN\"}"))
+    @Test void demoLoginRejectsArbitraryAccountsAndRoleInjection() throws Exception {
+        mvc.perform(get("/api/auth/demo-accounts"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(3))
+            .andExpect(jsonPath("$[0].email").doesNotExist());
+        mvc.perform(post("/api/auth/demo").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"account\":\"admin\"}"))
             .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/auth/demo").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"account\":\"mayank\",\"role\":\"ADMIN\"}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/auth/register").with(user("mayank@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isForbidden());
+        mvc.perform(post("/api/auth/login").with(user("mayank@example.test")).with(csrf()))
+            .andExpect(status().isForbidden());
+    }
+    @Test void switchingDemoStudentsUsesDistinctStableAccounts() throws Exception {
+        var first=mvc.perform(post("/api/auth/demo").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"account\":\"mayank\"}"))
+            .andExpect(status().isOk()).andReturn();
+        Long mayankId=json.readTree(first.getResponse().getContentAsString()).get("id").asLong();
+        var session=(MockHttpSession)first.getRequest().getSession(false);
+        var second=mvc.perform(post("/api/auth/demo").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"account\":\"bob\"}"))
+            .andExpect(status().isOk()).andReturn();
+        assertThat(json.readTree(second.getResponse().getContentAsString()).get("id").asLong()).isNotEqualTo(mayankId);
+        mvc.perform(get("/api/me").session((MockHttpSession)second.getRequest().getSession(false)))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Bob (demo student)"));
+        var again=mvc.perform(post("/api/auth/demo").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"account\":\"mayank\"}"))
+            .andExpect(status().isOk()).andReturn();
+        assertThat(json.readTree(again.getResponse().getContentAsString()).get("id").asLong()).isEqualTo(mayankId);
     }
     @Test void rejectsFutureDatesAndMissingEvidence() throws Exception {
         String body=json.writeValueAsString(new Api.ReportInput("LOST","Backpack","BAGS","LIBRARY",LocalDate.now().plusDays(2),"A general description"));
-        mvc.perform(post("/api/reports").with(user("alice@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
+        mvc.perform(post("/api/reports").with(user("mayank@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isBadRequest());
-        mvc.perform(post("/api/reports/"+report("FOUND",finder).id+"/claims").with(user("alice@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"privateDetails\":\"\"}"))
+        mvc.perform(post("/api/reports/"+report("FOUND",finder).id+"/claims").with(user("mayank@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"privateDetails\":\"\"}"))
             .andExpect(status().isBadRequest());
     }
 }

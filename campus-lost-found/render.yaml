@@ -2,6 +2,7 @@ services:
   - type: web
     name: campus-lost-found
     runtime: docker
+    rootDir: campus-lost-found
     plan: free
     healthCheckPath: /api/health
     envVars:

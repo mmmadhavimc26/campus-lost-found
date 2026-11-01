@@ -4,17 +4,17 @@ A Spring Boot application for reporting lost and found items on campus. The fron
 
 ## Working features
 
-- Student registration and session login, BCrypt password hashes and CSRF protection.
+- Dummy student login: choose Mayank, Bob or Finder. Sessions and CSRF protection remain enabled; no email, password or registration is required.
 - Public noticeboard with type, category and search filters (latest 200 reports).
 - Lost/found report creation, own reports and ranked possible matches.
 - Duplicate warnings that retain both reports.
 - Private text ownership evidence, one pending claim per student per found report.
-- Competing pending claims from different students, each visible only to its claimant.
+- Competing pending claims from different demo students, separated by the selected account.
 - Flyway database migrations, automated tests and Render Docker configuration.
 
 ## Not implemented yet
 
-No staff dashboard, approval/rejection actions, file uploads, physical handover, recovered status, report closure, password recovery or verified campus emails. All accounts are STUDENT accounts; all reports stay OPEN and claims stay PENDING. Staff evidence review is planned for milestone 2. This version stops at pending claims.
+No real student authentication, admin login, staff dashboard, approval/rejection actions, file uploads, physical handover, recovered status, report closure, password recovery or verified campus emails. All accounts are STUDENT accounts; all reports stay OPEN and claims stay PENDING. Staff evidence review is planned for milestone 2. This version stops at pending claims.
 
 See [project design, diagrams and review script](docs/PROJECT.md).
 
@@ -38,7 +38,7 @@ macOS/Linux:
 sh ./mvnw spring-boot:run
 ```
 
-Open http://localhost:8080 and create an account. Register your own test account. Three fictional reports are inserted only into an empty report database. Set `SEED_DEMO=false` to disable them. Local records persist under `data/`, which is excluded from Git.
+Open http://localhost:8080, select **Demo login**, choose a student and continue. Mayank and Bob can submit competing claims; Finder can report found items. Three fictional reports are inserted only into an empty report database. Set `SEED_DEMO=false` to disable them. Local records persist under `data/`, which is excluded from Git.
 
 Tests and executable JAR:
 
@@ -49,10 +49,10 @@ java -jar target/lost-found-0.1.0.jar
 
 ## Deploy to Render
 
-1. Upload the **contents of this folder** to a GitHub repository. `pom.xml`, `Dockerfile` and `render.yaml` must be at its root. Exclude `target/`, `data/` and `.env`.
-2. In Render choose **New → Blueprint**, connect that repository and select its branch.
+1. Commit and push this repository. The application lives in its `campus-lost-found/` subdirectory. Exclude `target/`, `data/` and `.env`.
+2. In Render choose **New → Blueprint**, connect that repository and select its branch. Set **Blueprint Path** to `campus-lost-found/render.yaml`. The service uses `rootDir: campus-lost-found` to find the application and Dockerfile.
 3. Review the proposed plans and any costs, then apply. The Blueprint creates a Docker web service and PostgreSQL database and wires their environment variables.
-4. Wait for the build and health check. Open the HTTPS service URL, create an account and test a report and claim.
+4. Wait for the build and health check. Open the HTTPS service URL, select a demo student and test a report and claim.
 5. If free plans are unavailable, select available plans in `render.yaml` before deploying. Render controls free database availability/expiry; back up records you need to keep.
 
 The Docker build runs `clean verify`; failing tests stop deployment. The app listens on Render's `PORT`, binds to `0.0.0.0` and uses `/api/health` for its process health check. The health endpoint is not an ongoing database readiness probe.
@@ -82,16 +82,24 @@ GET `/api/csrf` first, retain the session cookie and send the returned token usi
 | Method | Path | Access |
 | --- | --- | --- |
 | GET | `/api/reports`, `/api/options`, `/api/csrf`, `/api/health` | Public |
-| POST | `/api/auth/register` | Public + CSRF; JSON name/email/password |
-| POST | `/api/auth/login` | Public + CSRF; form username/password |
+| GET | `/api/auth/demo-accounts` | Public; three fixed demo students |
+| POST | `/api/auth/demo` | Public + CSRF; JSON `{"account":"mayank"}`, `bob` or `finder` |
 | POST | `/api/auth/logout` | Session + CSRF |
 | GET | `/api/me`, `/api/me/reports`, `/api/me/claims` | Student, own data |
 | POST | `/api/reports` | Student + CSRF |
 | GET | `/api/reports/{id}/matches` | Report owner |
 | POST | `/api/reports/{id}/claims` | Student other than finder + CSRF |
 
-Public report DTOs omit emails, hashes and ownership evidence. Evidence is text only and is not encrypted at the application field level. Database operators can read it: restrict credentials and backups.
+Public report DTOs omit emails, hashes and ownership evidence. Demo accounts are shared: anyone can select an account and view its claims. Use fictional details only; this is not real authentication. Evidence is text only and is not encrypted at the application field level. Database operators can read it: restrict credentials and backups.
 
 ## Before real campus use
 
-Add verified campus accounts, rate limits, password recovery, moderation, staff provisioning, retention/deletion policies, audit records, backup/restore procedures and the full decision/handover workflow. The 14-day window assumes accurate dates and exact categories; approximate dates and nearby-zone matching are future enhancements.
+Replace dummy login with real student and admin authentication. Add verified campus accounts, rate limits, password recovery, moderation, staff provisioning, retention/deletion policies, audit records, backup/restore procedures and the full decision/handover workflow. The 14-day window assumes accurate dates and exact categories; approximate dates and nearby-zone matching are future enhancements.
+
+## Demo access and background jobs
+
+The three demo students are created automatically, including when `SEED_DEMO=false`. That setting controls sample reports only. Password login and registration endpoints are disabled. Existing user/report rows are retained, but old password accounts cannot sign in through the demo screen. The `password_hash` database column is retained for migration compatibility and is not checked by dummy login.
+
+There is no cron job or scheduled task. Matching runs on request when the student chooses Find matches. Flyway migrations and optional sample report creation run at application startup, not on a timer. No email notifications or automatic claim processing are implemented.
+
+Manual Render deployment requires `SPRING_PROFILES_ACTIVE=prod`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD`. `SEED_DEMO=true` is optional for sample reports. Render provides `PORT`; no Supabase variables or cron variables are used.

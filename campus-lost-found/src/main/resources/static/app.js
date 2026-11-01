@@ -5,7 +5,6 @@ const state = {
   kind: 'ALL',
   reports: [],
   csrf: null,
-  register: false,
   claimId: null
 };
 
@@ -65,7 +64,7 @@ function renderAccount() {
   const container = $('#account');
   container.replaceChildren();
   if (!state.user) {
-    const button = element('button', 'button secondary', 'Sign in');
+    const button = element('button', 'button secondary', 'Demo login');
     button.onclick = () => openDialog('auth-dialog');
     container.append(button);
     return;
@@ -263,30 +262,14 @@ for (const button of document.querySelectorAll('[data-kind]')) {
 $('#search').oninput = renderReports;
 $('#category-filter').onchange = renderReports;
 
-$('#toggle-auth').onclick = () => {
-  state.register = !state.register;
-  $('#name-label').hidden = !state.register;
-  $('#name-label input').required = state.register;
-  $('#password-hint').hidden = !state.register;
-  $('#auth-form [name=password]').minLength = state.register ? 10 : 1;
-  $('#auth-form [name=password]').autocomplete = state.register ? 'new-password' : 'current-password';
-  $('#auth-title').textContent = state.register ? 'Create an account' : 'Sign in';
-  $('#auth-submit').textContent = state.register ? 'Create account' : 'Sign in';
-  $('#toggle-auth').textContent = state.register ? 'Back to sign in' : 'Create an account';
-  $('#auth-error').textContent = '';
-};
-
 handleForm('auth-form', async data => {
-  const email = data.email.trim().toLowerCase();
-  if (state.register) await api('/auth/register', {method: 'POST', body: JSON.stringify({...data, email})});
-  await api('/auth/login', {method: 'POST', body: new URLSearchParams({username: email, password: data.password})});
+  await api('/auth/demo', {method: 'POST', body: JSON.stringify(data)});
   await loadToken();
   state.user = await api('/me');
   $('#auth-dialog').close();
-  $('#auth-form').reset();
   renderAccount();
   await setView('mine');
-  showMessage('Signed in.');
+  showMessage('Using ' + state.user.name + '.');
 });
 
 handleForm('report-form', async data => {
@@ -313,6 +296,12 @@ async function initialise() {
   try {
     await loadToken();
     const options = await api('/options');
+    const accounts = await api('/auth/demo-accounts');
+    for (const account of accounts) {
+      const option = element('option', '', account.name);
+      option.value = account.key;
+      $('#demo-account').append(option);
+    }
     for (const [id, values] of [
       ['report-category', options.categories],
       ['category-filter', options.categories],
