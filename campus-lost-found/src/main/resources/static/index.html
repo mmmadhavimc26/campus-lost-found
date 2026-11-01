@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Campus Lost and Found</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to reports</a>
+  <header class="site-header">
+    <div class="header-content">
+      <a class="site-name" href="/">Campus Lost and Found</a>
+      <div id="account"><button id="open-auth" class="button secondary">Sign in</button></div>
+    </div>
+  </header>
+  <nav class="navigation" aria-label="Main navigation">
+    <div class="nav-content">
+      <button class="nav active" data-view="browse" aria-current="page">Browse reports</button>
+      <button class="nav" data-view="mine">My reports</button>
+      <button class="nav" data-view="claims">My claims</button>
+    </div>
+  </nav>
+  <main id="main">
+    <section class="page-heading">
+      <div>
+        <h1>Lost and found</h1>
+        <p>Check the reports below, or add an item you have lost or found on campus.</p>
+      </div>
+      <button id="open-report" class="button primary">Report an item</button>
+    </section>
+    <div id="message" class="message" role="status" aria-live="polite" hidden>
+      <span id="message-text"></span>
+      <button id="dismiss-message" aria-label="Dismiss message">Dismiss</button>
+    </div>
+    <section class="board" aria-labelledby="section-title">
+      <div class="section-heading">
+        <h2 id="section-title">Recent reports</h2>
+        <span id="count" class="count"></span>
+      </div>
+      <div id="filters" class="filters">
+        <div class="tabs" role="group" aria-label="Report type">
+          <button class="tab active" data-kind="ALL" aria-pressed="true">All items</button>
+          <button class="tab" data-kind="LOST" aria-pressed="false">Lost</button>
+          <button class="tab" data-kind="FOUND" aria-pressed="false">Found</button>
+        </div>
+        <label class="search-label">
+          <span>Search reports</span>
+          <input id="search" type="search" placeholder="Item, description or location">
+        </label>
+        <label class="category-label">
+          <span>Category</span>
+          <select id="category-filter"><option value="">All categories</option></select>
+        </label>
+      </div>
+      <div id="cards" class="report-list" aria-live="polite"></div>
+      <p id="board-note" class="board-note">Reports are public. Keep contact details and proof of ownership out of the description.</p>
+    </section>
+    <section class="help" aria-labelledby="help-title">
+      <h2 id="help-title">Reporting and claiming an item</h2>
+      <ul>
+        <li>Include the category, location and date when you submit a report.</li>
+        <li>Open <strong>My reports</strong> to check for possible matches.</li>
+        <li>To claim a found item, give identifying details that are not in its public description.</li>
+      </ul>
+      <p>Claims can be saved in this version. Staff review, approval and collection records are not available yet.</p>
+    </section>
+  </main>
+  <footer>Campus Lost and Found</footer>
+
+  <dialog id="auth-dialog" aria-labelledby="auth-title">
+    <button class="close" data-close="auth-dialog" aria-label="Close">×</button>
+    <h2 id="auth-title">Sign in</h2>
+    <form id="auth-form">
+      <label id="name-label" hidden>Name<input name="name" maxlength="80" autocomplete="name"></label>
+      <label>Email<input name="email" type="email" required maxlength="180" autocomplete="username"></label>
+      <label>Password<input name="password" type="password" required maxlength="64" autocomplete="current-password"></label>
+      <p id="password-hint" class="small" hidden>Use 10–64 characters. Choose a password you do not use elsewhere.</p>
+      <button class="button primary" type="submit" id="auth-submit">Sign in</button>
+      <p id="auth-error" class="form-error" role="alert"></p>
+    </form>
+    <button id="toggle-auth" class="link-button">Create an account</button>
+  </dialog>
+
+  <dialog id="report-dialog" aria-labelledby="report-title">
+    <button class="close" data-close="report-dialog" aria-label="Close">×</button>
+    <h2 id="report-title">Report an item</h2>
+    <form id="report-form">
+      <div class="form-row">
+        <label>Report type<select name="kind"><option value="LOST">Lost item</option><option value="FOUND">Found item</option></select></label>
+        <label>Category<select name="category" id="report-category" required></select></label>
+      </div>
+      <label>Item name<input name="title" required minlength="3" maxlength="100" placeholder="For example, black backpack"></label>
+      <div class="form-row">
+        <label>Location<select name="location" id="report-location" required></select></label>
+        <label>Date lost or found<input name="eventDate" type="date" required></label>
+      </div>
+      <label>Public description<textarea name="description" required minlength="10" maxlength="700" rows="4" placeholder="Describe the item and where it was lost or found"></textarea></label>
+      <p class="notice">Do not include your phone number, ID number or serial numbers. Keep unique marks and item contents private so they can be used to check ownership.</p>
+      <button class="button primary" type="submit">Submit report</button>
+      <p class="form-error" role="alert"></p>
+    </form>
+  </dialog>
+
+  <dialog id="claim-dialog" aria-labelledby="claim-title">
+    <button class="close" data-close="claim-dialog" aria-label="Close">×</button>
+    <h2 id="claim-title">Claim an item</h2>
+    <p id="claim-item"></p>
+    <form id="claim-form">
+      <label>Identifying details<textarea name="privateDetails" required minlength="15" maxlength="1500" rows="5" placeholder="Describe a hidden mark, the contents or another detail only the owner would know."></textarea></label>
+      <p class="notice">These details are private and appear only in your own claims. Do not include passwords, identity documents or bank details. Claims remain pending until staff review is added.</p>
+      <button class="button primary" type="submit">Submit claim</button>
+      <p class="form-error" role="alert"></p>
+    </form>
+  </dialog>
+
+  <dialog id="matches-dialog" class="wide" aria-labelledby="matches-title">
+    <button class="close" data-close="matches-dialog" aria-label="Close">×</button>
+    <h2 id="matches-title">Possible matches</h2>
+    <p class="small">Reports with the same category and a found date within 14 days of the loss are listed here. Location and closer dates affect the ranking. A match does not prove ownership.</p>
+    <div id="matches-list" class="report-list"></div>
+  </dialog>
+</body>
+</html>

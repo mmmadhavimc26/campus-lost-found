@@ -1,0 +1,36 @@
+@startuml
+left to right direction
+actor Visitor
+actor Student
+actor "Security staff (planned)" as Security
+actor "Administrator (planned)" as Admin
+rectangle "Milestone 1 - implemented" {
+  usecase "Browse public reports" as Browse
+  usecase "Create lost/found report" as Report
+  usecase "Warn of possible duplicate" as Duplicate
+  usecase "Suggest matches / no match" as Match
+  usecase "Submit private pending claim" as Claim
+  usecase "Read own private claims" as Own
+}
+Visitor --> Browse
+Student --> Report
+Student --> Match
+Student --> Claim
+Student --> Own
+Report ..> Duplicate : <<include>>
+rectangle "Milestone 2 - planned" {
+  usecase "Verify hidden details" as Verify
+  usecase "Resolve competing claims" as Compete
+  usecase "Approve/reject with reason" as Decide
+  usecase "Confirm physical handover" as Handover
+  usecase "Recover and close reports" as Close
+  usecase "Link duplicates / audit" as Audit
+}
+Security --> Verify
+Security --> Decide
+Security --> Handover
+Admin --> Compete
+Admin --> Audit
+Decide ..> Verify : <<include>>
+Handover ..> Close : <<include>>
+@enduml

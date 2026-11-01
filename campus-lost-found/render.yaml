@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: campus-lost-found
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: SEED_DEMO
+        value: "true"
+      - key: DB_HOST
+        fromDatabase:
+          name: campus-lost-found-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: campus-lost-found-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: campus-lost-found-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: campus-lost-found-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: campus-lost-found-db
+          property: password
+
+databases:
+  - name: campus-lost-found-db
+    plan: free
+    databaseName: campus
+    user: campus
+    ipAllowList: []
