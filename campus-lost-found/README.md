@@ -100,7 +100,7 @@ Replace dummy login with real student and admin authentication. Add verified cam
 
 The three demo students are created automatically, including when `SEED_DEMO=false`. That setting controls sample reports only. Password login and registration endpoints are disabled. Existing user/report rows are retained, but old password accounts cannot sign in through the demo screen. The `password_hash` database column is retained for migration compatibility and is not checked by dummy login.
 
-There is no cron job or scheduled task. Matching runs on request when the student chooses Find matches. Flyway migrations and optional sample report creation run at application startup, not on a timer. No email notifications or automatic claim processing are implemented.
+A GitHub Actions workflow pings the deployed health endpoint every 10 minutes after it is pushed to the default branch. There is no Render cron service or Spring scheduled job. Matching runs on request when the student chooses Find matches. Flyway migrations and optional sample report creation run at startup. No email notifications or automatic claim processing are implemented.
 
 Manual Render deployment requires `SPRING_PROFILES_ACTIVE=prod`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD`. `SEED_DEMO=true` is optional for sample reports. Render provides `PORT`; no Supabase variables or cron variables are used.
 
@@ -117,3 +117,22 @@ node --test src/test/js/session-recovery.test.cjs
 ```
 
 The Docker/Maven build runs the backend tests. The Node tests are a separate check.
+
+## Scheduled website ping
+
+The repository-root workflow `.github/workflows/keep-site-awake.yml` checks:
+
+`https://campus-lost-found-7pw0.onrender.com/api/health`
+
+It runs every 10 minutes, at minutes 03, 13, 23, 33, 43 and 53 UTC. It checks for HTTP 200 and JSON `status: UP`, with up to six attempts to allow a sleeping service to start. It never signs in, changes reports or processes claims. The health endpoint reports that the application is responding; it does not query the database.
+
+To activate it:
+
+1. Commit and push the workflow to the repository's default branch (`main`). The file must be in the Git repository root, one level above this application folder.
+2. Open the repository on GitHub and choose **Actions → Keep site awake**.
+3. If GitHub asks you to enable Actions, enable it for the repository.
+4. Choose **Run workflow** to test it immediately, then inspect the run result.
+
+No additional Render service or new secret/environment variable is needed. GitHub Actions runner usage counts toward your account's allowance. Scheduled runs can be delayed or dropped, and public repositories' schedules can be disabled after 60 days without activity. The ping can reduce idle sleep but does not guarantee uptime or prevent Render restarts, session expiry or database-plan expiration.
+
+References: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule and https://render.com/docs/free
