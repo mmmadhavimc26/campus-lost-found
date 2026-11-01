@@ -103,3 +103,17 @@ The three demo students are created automatically, including when `SEED_DEMO=fal
 There is no cron job or scheduled task. Matching runs on request when the student chooses Find matches. Flyway migrations and optional sample report creation run at application startup, not on a timer. No email notifications or automatic claim processing are implemented.
 
 Manual Render deployment requires `SPRING_PROFILES_ACTIVE=prod`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD`. `SEED_DEMO=true` is optional for sample reports. Render provides `PORT`; no Supabase variables or cron variables are used.
+
+## Session expiry and logs
+
+A Render restart or redeploy ends in-memory demo sessions. The frontend refreshes rejected CSRF tokens once. If sign-in is also lost, it asks for a demo student again and keeps the open report or claim form. Submit the form after re-entry; network failures are not automatically retried because their outcome may be unknown.
+
+Hikari startup and shutdown messages are normal database-pool lifecycle logs. They occur when the application starts or stops, not for every report. They do not establish why the host restarted the application.
+
+Run frontend session-recovery tests with Node.js 18 or later:
+
+```sh
+node --test src/test/js/session-recovery.test.cjs
+```
+
+The Docker/Maven build runs the backend tests. The Node tests are a separate check.

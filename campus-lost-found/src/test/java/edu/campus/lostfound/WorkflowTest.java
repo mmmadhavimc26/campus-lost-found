@@ -129,4 +129,44 @@ class WorkflowTest {
         mvc.perform(post("/api/reports/"+report("FOUND",finder).id+"/claims").with(user("mayank@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"privateDetails\":\"\"}"))
             .andExpect(status().isBadRequest());
     }
+
+    @Test void expiredSessionRejectsTheOldTokenAndAllowsClaimAfterDemoReentry() throws Exception {
+        Long id=report("FOUND",finder).id;
+        var initial=mvc.perform(get("/api/csrf")).andExpect(status().isOk()).andReturn();
+        var originalSession=(MockHttpSession)initial.getRequest().getSession(false);
+        var initialToken=json.readTree(initial.getResponse().getContentAsString());
+        mvc.perform(post("/api/auth/demo").session(originalSession)
+            .header(initialToken.get("headerName").asText(),initialToken.get("token").asText())
+            .contentType(MediaType.APPLICATION_JSON).content("{\"account\":\"mayank\"}"))
+            .andExpect(status().isOk());
+        var signedIn=mvc.perform(get("/api/csrf").session(originalSession)).andReturn();
+        var oldToken=json.readTree(signedIn.getResponse().getContentAsString());
+        originalSession.invalidate();
+
+        var fresh=mvc.perform(get("/api/csrf")).andExpect(status().isOk()).andReturn();
+        var newSession=(MockHttpSession)fresh.getRequest().getSession(false);
+        var newToken=json.readTree(fresh.getResponse().getContentAsString());
+        mvc.perform(post("/api/reports/"+id+"/claims").session(newSession)
+            .header(oldToken.get("headerName").asText(),oldToken.get("token").asText())
+            .contentType(MediaType.APPLICATION_JSON).content(evidence()))
+            .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CSRF_INVALID"));
+        assertThat(claims.count()).isZero();
+        mvc.perform(post("/api/reports/"+id+"/claims").session(newSession)
+            .header(newToken.get("headerName").asText(),newToken.get("token").asText())
+            .contentType(MediaType.APPLICATION_JSON).content(evidence()))
+            .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("SIGN_IN_REQUIRED"));
+        assertThat(claims.count()).isZero();
+
+        mvc.perform(post("/api/auth/demo").session(newSession)
+            .header(newToken.get("headerName").asText(),newToken.get("token").asText())
+            .contentType(MediaType.APPLICATION_JSON).content("{\"account\":\"mayank\"}"))
+            .andExpect(status().isOk());
+        var restored=mvc.perform(get("/api/csrf").session(newSession)).andReturn();
+        var restoredToken=json.readTree(restored.getResponse().getContentAsString());
+        mvc.perform(post("/api/reports/"+id+"/claims").session(newSession)
+            .header(restoredToken.get("headerName").asText(),restoredToken.get("token").asText())
+            .contentType(MediaType.APPLICATION_JSON).content(evidence()))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("PENDING"));
+        assertThat(claims.count()).isEqualTo(1);
+    }
 }

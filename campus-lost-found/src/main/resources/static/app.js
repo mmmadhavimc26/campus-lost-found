@@ -29,23 +29,40 @@ function showMessage(text) {
 }
 
 async function loadToken() {
-  const response = await fetch('/api/csrf');
+  const response = await fetch('/api/csrf', {cache: 'no-store'});
   if (!response.ok) throw new Error('Could not start a session. Refresh the page and try again.');
   state.csrf = await response.json();
 }
 
-async function api(path, options = {}) {
+function requestDemoLogin() {
+  state.user = null;
+  state.csrf = null;
+  renderAccount();
+  $('#auth-dialog .form-error').textContent = 'Your session ended. Choose your demo student again. Your form details have been kept.';
+  if (!$('#auth-dialog').open) openDialog('auth-dialog');
+}
+
+async function api(path, options = {}, csrfRetried = false) {
   const headers = {...options.headers};
+  const write = options.method && options.method !== 'GET';
   if (options.body && !(options.body instanceof URLSearchParams)) {
     headers['Content-Type'] = 'application/json';
   }
-  if (options.method && options.method !== 'GET') {
+  if (write) {
     if (!state.csrf) await loadToken();
     headers[state.csrf.headerName] = state.csrf.token;
   }
   const response = await fetch('/api' + path, {...options, headers});
   if (response.status === 204) return null;
   const data = await response.json().catch(() => ({message: 'Could not read the server response.'}));
+  if (response.status === 403 && data.code === 'CSRF_INVALID' && write && !csrfRetried) {
+    await loadToken();
+    return api(path, options, true);
+  }
+  if (response.status === 401) {
+    requestDemoLogin();
+    throw new Error('Your session ended. Choose a demo student again, then submit the form. Your details have been kept.');
+  }
   if (!response.ok) throw new Error(data.message || `Request failed (${response.status}).`);
   return data;
 }
@@ -189,8 +206,8 @@ async function setView(view) {
   $('#filters').hidden = view === 'claims';
   $('#section-title').textContent = {browse: 'Recent reports', mine: 'My reports', claims: 'My claims'}[view];
   $('#board-note').textContent = view === 'claims'
-    ? 'A pending claim is not approval to collect an item. Staff review and collection records are not available yet.'
-    : 'Reports are public. Keep contact details and proof of ownership out of the description.';
+    ? "These claims haven't been approved. Staff approval and collection will be added later."
+    : "Anyone can read these reports. Don't post contact details or proof that an item is yours.";
   showEmpty($('#cards'), 'Loading reports...');
   $('#cards').setAttribute('aria-busy', 'true');
   $('#count').textContent = '';
@@ -269,7 +286,11 @@ handleForm('auth-form', async data => {
   $('#auth-dialog').close();
   renderAccount();
   await setView('mine');
-  showMessage('Using ' + state.user.name + '.');
+  const hasDraft = $('#report-dialog').open || $('#claim-dialog').open;
+  for (const id of ['report-dialog', 'claim-dialog']) {
+    if ($('#' + id).open) $('#' + id + ' .form-error').textContent = '';
+  }
+  showMessage('Using ' + state.user.name + (hasDraft ? '. Your form details are still here. Submit the form when ready.' : '.'));
 });
 
 handleForm('report-form', async data => {

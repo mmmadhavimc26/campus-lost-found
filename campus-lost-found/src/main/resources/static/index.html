@@ -24,11 +24,11 @@
     </div>
   </nav>
   <main id="main">
-    <p class="notice">Demo version: anyone can select these student accounts. Use fictional reports and identifying details only.</p>
+    <p class="notice">This is a demo with shared accounts. Please use sample details, not personal information.</p>
     <section class="page-heading">
       <div>
         <h1>Lost and found</h1>
-        <p>Check the reports below, or add an item you have lost or found on campus.</p>
+        <p>Look through the reports below, or add something you've lost or found on campus.</p>
       </div>
       <button id="open-report" class="button primary">Report an item</button>
     </section>
@@ -57,16 +57,16 @@
         </label>
       </div>
       <div id="cards" class="report-list" aria-live="polite"></div>
-      <p id="board-note" class="board-note">Reports are public. Keep contact details and proof of ownership out of the description.</p>
+      <p id="board-note" class="board-note">Anyone can read these reports. Don't post contact details or proof that an item is yours.</p>
     </section>
     <section class="help" aria-labelledby="help-title">
-      <h2 id="help-title">Reporting and claiming an item</h2>
+      <h2 id="help-title">How it works</h2>
       <ul>
-        <li>Include the category, location and date when you submit a report.</li>
-        <li>Open <strong>My reports</strong> to check for possible matches.</li>
-        <li>To claim a found item, give identifying details that are not in its public description.</li>
+        <li>Lost or found something? Add a report with the place and date.</li>
+        <li>Check <strong>My reports</strong> to see if another item matches yours.</li>
+        <li>If you think an item is yours, share a detail only you would know.</li>
       </ul>
-      <p>Claims can be saved in this version. Staff review, approval and collection records are not available yet.</p>
+      <p>Claims stay pending for now. Staff approval and collection will be added later.</p>
     </section>
   </main>
   <footer>Campus Lost and Found</footer>
@@ -74,10 +74,10 @@
   <dialog id="auth-dialog" aria-labelledby="auth-title">
     <button class="close" data-close="auth-dialog" aria-label="Close">×</button>
     <h2 id="auth-title">Demo login</h2>
-    <p>Choose a student to try reporting, matching and competing claims. No email or password is required.</p>
+    <p>Pick a demo student to try the site. You don't need an email or password.</p>
     <form id="auth-form">
       <label>Demo student<select name="account" id="demo-account" required></select></label>
-      <p class="notice">These accounts are shared. They do not verify anyone's identity. Admin login will be added later.</p>
+      <p class="notice">Anyone can use these accounts. Admin login will be added later.</p>
       <button class="button primary" type="submit">Continue as student</button>
       <p class="form-error" role="alert"></p>
     </form>
@@ -97,7 +97,7 @@
         <label>Date lost or found<input name="eventDate" type="date" required></label>
       </div>
       <label>Public description<textarea name="description" required minlength="10" maxlength="700" rows="4" placeholder="Describe the item and where it was lost or found"></textarea></label>
-      <p class="notice">Do not include your phone number, ID number or serial numbers. Keep unique marks and item contents private so they can be used to check ownership.</p>
+      <p class="notice">Everyone can read this description. Leave out phone numbers and ID or serial numbers. Save details such as the contents of a bag for the claim form.</p>
       <button class="button primary" type="submit">Submit report</button>
       <p class="form-error" role="alert"></p>
     </form>
@@ -109,7 +109,7 @@
     <p id="claim-item"></p>
     <form id="claim-form">
       <label>Identifying details<textarea name="privateDetails" required minlength="15" maxlength="1500" rows="5" placeholder="Describe a hidden mark, the contents or another detail only the owner would know."></textarea></label>
-      <p class="notice">These details are hidden from public reports and shown in the selected demo account. Anyone can switch to that account, so use fictional details. Do not include passwords, identity documents or bank details. Claims remain pending until staff review is added.</p>
+      <p class="notice">These details stay out of the public report, but anyone can switch accounts in this demo. Use sample details and leave out passwords, ID numbers and bank details. Your claim will stay pending for now.</p>
       <button class="button primary" type="submit">Submit claim</button>
       <p class="form-error" role="alert"></p>
     </form>
@@ -118,7 +118,7 @@
   <dialog id="matches-dialog" class="wide" aria-labelledby="matches-title">
     <button class="close" data-close="matches-dialog" aria-label="Close">×</button>
     <h2 id="matches-title">Possible matches</h2>
-    <p class="small">Reports with the same category and a found date within 14 days of the loss are listed here. Location and closer dates affect the ranking. A match does not prove ownership.</p>
+    <p class="small">Matches use the item category, location and dates. A suggestion doesn't mean the item belongs to you.</p>
     <div id="matches-list" class="report-list"></div>
   </dialog>
 </body>
