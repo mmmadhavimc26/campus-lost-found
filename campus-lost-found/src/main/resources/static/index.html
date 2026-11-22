@@ -122,5 +122,35 @@
     <p class="small">Matches use the item category, location and dates. A suggestion doesn't mean the item belongs to you.</p>
     <div id="matches-list" class="report-list"></div>
   </dialog>
+
+  <dialog id="edit-dialog" aria-labelledby="edit-title">
+    <button class="close" data-close="edit-dialog" aria-label="Close">×</button>
+    <h2 id="edit-title">Edit report</h2>
+    <form id="edit-form">
+      <div class="form-row">
+        <label>Category<select name="category" id="edit-category" required></select></label>
+        <label>Subtype<select name="subtype" id="edit-subtype" required></select></label>
+      </div>
+      <label>Item name<input name="title" id="edit-title-input" required minlength="3" maxlength="100" placeholder="For example, black backpack"></label>
+      <div class="form-row">
+        <label>Location<select name="location" id="edit-location" required></select></label>
+        <label>Date lost or found<input name="eventDate" id="edit-date" type="date" required></label>
+      </div>
+      <label>Public description<textarea name="description" id="edit-description" required minlength="10" maxlength="700" rows="4" placeholder="Describe the item and where it was lost or found"></textarea></label>
+      <p class="notice">Everyone can read this description. Leave out phone numbers and ID or serial numbers.</p>
+      <button class="button primary" type="submit">Save changes</button>
+      <p class="form-error" role="alert"></p>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+    <button class="close" data-close="confirm-dialog" aria-label="Close">×</button>
+    <h2 id="confirm-title">Remove report</h2>
+    <p id="confirm-text">Are you sure you want to remove this report? It will no longer appear on the noticeboard or receive new matches.</p>
+    <div class="dialog-actions">
+      <button class="button secondary" id="confirm-cancel" type="button">Keep report</button>
+      <button class="button primary danger" id="confirm-delete" type="button">Remove report</button>
+    </div>
+  </dialog>
 </body>
 </html>

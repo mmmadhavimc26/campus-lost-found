@@ -5,7 +5,11 @@ const state = {
   kind: 'ALL',
   reports: [],
   csrf: null,
-  claimId: null
+  claimId: null,
+  editId: null,
+  deleteId: null,
+  options: null,
+  myReportIds: new Set()
 };
 
 function label(value) {
@@ -77,6 +81,19 @@ function requireLogin() {
   return false;
 }
 
+async function refreshMyReportIds() {
+  if (!state.user) {
+    state.myReportIds = new Set();
+    return;
+  }
+  try {
+    const mine = await api('/me/reports');
+    state.myReportIds = new Set(mine.map(r => r.id));
+  } catch {
+    state.myReportIds = new Set();
+  }
+}
+
 function renderAccount() {
   const container = $('#account');
   container.replaceChildren();
@@ -92,6 +109,7 @@ function renderAccount() {
     try {
       await api('/auth/logout', {method: 'POST'});
       state.user = null;
+      state.myReportIds = new Set();
       await loadToken();
       renderAccount();
       await setView('browse');
@@ -103,13 +121,65 @@ function renderAccount() {
   container.append(button);
 }
 
+function syncSubtypes(categorySelectId, subtypeSelectId, preferredValue = null) {
+  const catSelect = $('#' + categorySelectId);
+  const subSelect = $('#' + subtypeSelectId);
+  if (!catSelect || !subSelect || !state.options) return;
+  const category = catSelect.value;
+  const subtypes = (state.options.subtypesByCategory && state.options.subtypesByCategory[category]) || [];
+  subSelect.replaceChildren(...subtypes.map(s => {
+    const opt = element('option', '', label(s));
+    opt.value = s;
+    return opt;
+  }));
+  if (preferredValue && subtypes.includes(preferredValue)) {
+    subSelect.value = preferredValue;
+  } else if (subtypes.length > 0) {
+    subSelect.value = subtypes[0];
+  }
+}
+
+function openReportDialog() {
+  if (!requireLogin()) return;
+  const form = $('#report-form');
+  form.reset();
+  if (state.options && state.options.categories && state.options.categories.length > 0) {
+    $('#report-category').value = state.options.categories[0];
+  }
+  syncSubtypes('report-category', 'report-subtype');
+  form.querySelector('.form-error').textContent = '';
+  openDialog('report-dialog');
+}
+
 function startClaim(report) {
   if (!requireLogin()) return;
+  if (!report || report.kind !== 'FOUND' || report.status !== 'OPEN') return;
+  if (state.user && state.myReportIds && state.myReportIds.has(report.id)) return;
   state.claimId = report.id;
   $('#claim-item').textContent = `${report.title} — Report #${report.id}`;
   $('#claim-form').reset();
   $('#claim-form .form-error').textContent = '';
   openDialog('claim-dialog');
+}
+
+function startEdit(report) {
+  if (!requireLogin()) return;
+  state.editId = report.id;
+  $('#edit-title-input').value = report.title;
+  $('#edit-category').value = report.category;
+  syncSubtypes('edit-category', 'edit-subtype', report.subtype);
+  $('#edit-location').value = report.location;
+  $('#edit-date').value = report.eventDate;
+  $('#edit-description').value = report.description;
+  $('#edit-form .form-error').textContent = '';
+  openDialog('edit-dialog');
+}
+
+function confirmDelete(report) {
+  if (!requireLogin()) return;
+  state.deleteId = report.id;
+  $('#confirm-text').textContent = `Are you sure you want to remove "${report.title}" (Report #${report.id})? It will no longer appear on the noticeboard or receive new matches.`;
+  openDialog('confirm-dialog');
 }
 
 function renderReport(report, action = 'claim') {
@@ -130,15 +200,24 @@ function renderReport(report, action = 'claim') {
   body.append(heading, metadata, element('p', 'description', report.description));
   const actions = element('div', 'report-actions');
   actions.append(element('span', 'report-status', label(report.status)));
-  if (action === 'matches') {
-    const button = element('button', 'link-button', 'Find matches');
-    button.onclick = () => loadMatches(report.id);
-    actions.append(button);
-  } else if (action === 'claim' && report.kind === 'FOUND') {
+
+  const isOpen = report.status === 'OPEN';
+  const isMine = state.user && state.myReportIds && state.myReportIds.has(report.id);
+
+  if (action === 'mine' && isOpen) {
+    const matchBtn = element('button', 'link-button', 'Find matches');
+    matchBtn.onclick = () => loadMatches(report.id);
+    const editBtn = element('button', 'link-button', 'Edit');
+    editBtn.onclick = () => startEdit(report);
+    const deleteBtn = element('button', 'link-button danger-link', 'Delete');
+    deleteBtn.onclick = () => confirmDelete(report);
+    actions.append(matchBtn, editBtn, deleteBtn);
+  } else if (action === 'claim' && report.kind === 'FOUND' && isOpen && !isMine) {
     const button = element('button', 'link-button', 'Claim item');
     button.onclick = () => startClaim(report);
     actions.append(button);
   }
+
   row.append(body, actions);
   return row;
 }
@@ -156,7 +235,7 @@ function renderReports() {
     (!query || [report.title, report.description, label(report.location)].some(value => value.toLowerCase().includes(query)))
   );
   const container = $('#cards');
-  container.replaceChildren(...reports.map(report => renderReport(report, state.view === 'mine' ? 'matches' : 'claim')));
+  container.replaceChildren(...reports.map(report => renderReport(report, state.view === 'mine' ? 'mine' : 'claim')));
   if (!reports.length) {
     const text = state.reports.length
       ? 'No reports match these filters. Try a different search or category.'
@@ -168,8 +247,11 @@ function renderReports() {
 
 function renderClaims(claims) {
   const rows = claims.map(claim => {
+    const isCancelled = claim.report && claim.report.status === 'CANCELLED';
     const row = renderReport(claim.report, 'none');
-    row.querySelector('.report-actions').replaceChildren(element('span', 'badge', 'Pending — not approved'));
+    const badgeText = isCancelled ? 'Report cancelled by owner' : 'Pending — not approved';
+    const badgeClass = isCancelled ? 'badge lost' : 'badge';
+    row.querySelector('.report-actions').replaceChildren(element('span', badgeClass, badgeText));
     const details = element('div', 'report-extra');
     details.append(element('p', 'private-label', 'Your private identifying details'), element('div', 'private', claim.privateDetails));
     row.append(details);
@@ -212,6 +294,7 @@ async function setView(view) {
   $('#cards').setAttribute('aria-busy', 'true');
   $('#count').textContent = '';
   try {
+    await refreshMyReportIds();
     if (view === 'claims') renderClaims(await api('/me/claims'));
     else {
       state.reports = await api(view === 'mine' ? '/me/reports' : '/reports');
@@ -231,7 +314,7 @@ async function loadMatches(id) {
   try {
     const matches = await api(`/reports/${id}/matches`);
     const rows = matches.map(match => {
-      const row = renderReport(match.report);
+      const row = renderReport(match.report, 'claim');
       row.prepend(element('p', 'match-summary', `Match score: ${match.score}/100 (${match.classification || 'Match'}). ${match.reason}`));
       return row;
     });
@@ -260,12 +343,7 @@ function handleForm(id, submit) {
 }
 
 $('#open-auth').onclick = () => openDialog('auth-dialog');
-$('#open-report').onclick = () => {
-  if (!requireLogin()) return;
-  $('#report-form').reset();
-  $('#report-form .form-error').textContent = '';
-  openDialog('report-dialog');
-};
+$('#open-report').onclick = openReportDialog;
 $('#dismiss-message').onclick = () => { $('#message').hidden = true; };
 for (const button of document.querySelectorAll('[data-close]')) {
   button.onclick = () => $('#' + button.dataset.close).close();
@@ -278,6 +356,24 @@ for (const button of document.querySelectorAll('[data-kind]')) {
 }
 $('#search').oninput = renderReports;
 $('#category-filter').onchange = renderReports;
+$('#report-category').onchange = () => syncSubtypes('report-category', 'report-subtype');
+$('#edit-category').onchange = () => syncSubtypes('edit-category', 'edit-subtype');
+
+$('#confirm-cancel').onclick = () => $('#confirm-dialog').close();
+$('#confirm-delete').onclick = async () => {
+  if (!state.deleteId) return;
+  try {
+    await api(`/reports/${state.deleteId}`, {method: 'DELETE'});
+    $('#confirm-dialog').close();
+    state.deleteId = null;
+    await refreshMyReportIds();
+    await setView('mine');
+    showMessage('Report removed.');
+  } catch (error) {
+    showMessage(error.message);
+    $('#confirm-dialog').close();
+  }
+};
 
 handleForm('auth-form', async data => {
   await api('/auth/demo', {method: 'POST', body: JSON.stringify(data)});
@@ -285,9 +381,10 @@ handleForm('auth-form', async data => {
   state.user = await api('/me');
   $('#auth-dialog').close();
   renderAccount();
+  await refreshMyReportIds();
   await setView('mine');
-  const hasDraft = $('#report-dialog').open || $('#claim-dialog').open;
-  for (const id of ['report-dialog', 'claim-dialog']) {
+  const hasDraft = $('#report-dialog').open || $('#claim-dialog').open || $('#edit-dialog').open;
+  for (const id of ['report-dialog', 'claim-dialog', 'edit-dialog']) {
     if ($('#' + id).open) $('#' + id + ' .form-error').textContent = '';
   }
   showMessage('Using ' + state.user.name + (hasDraft ? '. Your form details are still here. Submit the form when ready.' : '.'));
@@ -299,10 +396,19 @@ handleForm('report-form', async data => {
   selectKind('ALL');
   $('#search').value = '';
   $('#category-filter').value = '';
+  await refreshMyReportIds();
   await setView('mine');
   showMessage(result.possibleDuplicates.length
     ? 'Report saved. Similar reports already exist: ' + result.possibleDuplicates.map(report => '#' + report.id).join(', ') + '. Please check them before submitting another report.'
     : 'Report saved. Select Find matches to check for related reports.');
+});
+
+handleForm('edit-form', async data => {
+  await api(`/reports/${state.editId}`, {method: 'PUT', body: JSON.stringify(data)});
+  $('#edit-dialog').close();
+  await refreshMyReportIds();
+  await setView('mine');
+  showMessage('Report updated.');
 });
 
 handleForm('claim-form', async data => {
@@ -316,7 +422,7 @@ handleForm('claim-form', async data => {
 async function initialise() {
   try {
     await loadToken();
-    const options = await api('/options');
+    state.options = await api('/options');
     const accounts = await api('/auth/demo-accounts');
     for (const account of accounts) {
       const option = element('option', '', account.name);
@@ -324,34 +430,31 @@ async function initialise() {
       $('#demo-account').append(option);
     }
     for (const [id, values] of [
-      ['report-category', options.categories],
-      ['category-filter', options.categories],
-      ['report-location', options.locations]
+      ['report-category', state.options.categories],
+      ['edit-category', state.options.categories],
+      ['category-filter', state.options.categories],
+      ['report-location', state.options.locations],
+      ['edit-location', state.options.locations]
     ]) {
+      const select = $('#' + id);
+      if (!select) continue;
       for (const value of values) {
         const option = element('option', '', label(value));
         option.value = value;
-        $('#' + id).append(option);
+        select.append(option);
       }
     }
-    const updateSubtypes = () => {
-      const cat = $('#report-category').value;
-      const subtypes = (options.subtypesByCategory && options.subtypesByCategory[cat]) || [];
-      const select = $('#report-subtype');
-      if (select) {
-        select.replaceChildren(...subtypes.map(s => {
-          const opt = element('option', '', label(s));
-          opt.value = s;
-          return opt;
-        }));
-      }
-    };
-    $('#report-category').onchange = updateSubtypes;
-    updateSubtypes();
+    syncSubtypes('report-category', 'report-subtype');
+    syncSubtypes('edit-category', 'edit-subtype');
     const now = new Date();
-    $('#report-form [name=eventDate]').max = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+    const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+    $('#report-form [name=eventDate]').max = today;
+    $('#edit-form [name=eventDate]').max = today;
     const response = await fetch('/api/me');
-    if (response.ok) state.user = await response.json();
+    if (response.ok) {
+      state.user = await response.json();
+      await refreshMyReportIds();
+    }
     renderAccount();
     await setView('browse');
   } catch (error) {

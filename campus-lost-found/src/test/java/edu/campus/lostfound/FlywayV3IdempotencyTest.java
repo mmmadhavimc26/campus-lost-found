@@ -154,6 +154,63 @@ class FlywayV3IdempotencyTest {
     }
 
     @Test
+    void failsMigrationWhenUnexpectedCategoryHasPopulatedSubtype() throws Exception {
+        String dbUrl = "jdbc:h2:mem:v3_fail_unexpected_populated_sub;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
+
+        Flyway flywayToV2 = Flyway.configure()
+            .dataSource(dbUrl, "sa", "")
+            .target("2")
+            .load();
+        flywayToV2.migrate();
+
+        try (Connection conn = DriverManager.getConnection(dbUrl, "sa", "");
+             Statement stmt = conn.createStatement()) {
+
+            stmt.execute("INSERT INTO app_users (name, email, password_hash, enabled) VALUES ('Test Student', 'test@example.com', 'UNUSED', true)");
+            stmt.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS subtype VARCHAR(40);");
+            stmt.execute("INSERT INTO reports (owner_id, kind, title, category, subtype, location, event_date, description, created_at, status) " +
+                         "VALUES (1, 'LOST', 'Invalid Item', 'UNEXPECTED_CATEGORY', 'BACKPACK', 'LIBRARY', CURRENT_DATE, 'Description', CURRENT_TIMESTAMP, 'OPEN')");
+            stmt.execute("ALTER TABLE reports ALTER COLUMN subtype SET NOT NULL;");
+        }
+
+        Flyway flywayToLatest = Flyway.configure()
+            .dataSource(dbUrl, "sa", "")
+            .load();
+
+        assertThatThrownBy(flywayToLatest::migrate)
+            .isInstanceOf(FlywayException.class);
+    }
+
+    @Test
+    void failsMigrationWhenNullCategoryHasPopulatedSubtype() throws Exception {
+        String dbUrl = "jdbc:h2:mem:v3_fail_null_populated_sub;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
+
+        Flyway flywayToV2 = Flyway.configure()
+            .dataSource(dbUrl, "sa", "")
+            .target("2")
+            .load();
+        flywayToV2.migrate();
+
+        try (Connection conn = DriverManager.getConnection(dbUrl, "sa", "");
+             Statement stmt = conn.createStatement()) {
+
+            stmt.execute("INSERT INTO app_users (name, email, password_hash, enabled) VALUES ('Test Student', 'test@example.com', 'UNUSED', true)");
+            stmt.execute("ALTER TABLE reports ALTER COLUMN category DROP NOT NULL;");
+            stmt.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS subtype VARCHAR(40);");
+            stmt.execute("INSERT INTO reports (owner_id, kind, title, category, subtype, location, event_date, description, created_at, status) " +
+                         "VALUES (1, 'LOST', 'Null Cat Item', NULL, 'LAPTOP', 'LIBRARY', CURRENT_DATE, 'Description', CURRENT_TIMESTAMP, 'OPEN')");
+            stmt.execute("ALTER TABLE reports ALTER COLUMN subtype SET NOT NULL;");
+        }
+
+        Flyway flywayToLatest = Flyway.configure()
+            .dataSource(dbUrl, "sa", "")
+            .load();
+
+        assertThatThrownBy(flywayToLatest::migrate)
+            .isInstanceOf(FlywayException.class);
+    }
+
+    @Test
     void backfillsValidSubtypesForNullSubtypeRows() throws Exception {
         String dbUrl = "jdbc:h2:mem:v3_backfill_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
 

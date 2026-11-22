@@ -253,4 +253,161 @@ class WorkflowTest {
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.report.subtype").value("LAPTOP"));
     }
+
+    @Test void claimEligibilityRulesEnforced() throws Exception {
+        Long lostReportId = report("LOST", mayank).id;
+        Long foundReportId = report("FOUND", finder).id;
+
+        // 1. Direct claim on a LOST report is rejected with 409
+        mvc.perform(post("/api/reports/" + lostReportId + "/claims")
+                .with(user("bob@example.test")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(evidence()))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("Only open found reports can receive claims."));
+
+        // 2. Student cannot claim their own FOUND report (rejected with 409)
+        mvc.perform(post("/api/reports/" + foundReportId + "/claims")
+                .with(user("finder@example.test")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(evidence()))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("You cannot claim an item you reported as found."));
+
+        // 3. Student who submitted a LOST report CAN claim another student's matching FOUND report (201)
+        mvc.perform(post("/api/reports/" + foundReportId + "/claims")
+                .with(user("mayank@example.test")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(evidence()))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.status").value("PENDING"));
+
+        // 4. Cancelled FOUND report cannot receive claims (409)
+        ItemReport cancelledFound = reports.save(new ItemReport(finder,
+            new Api.ReportInput("FOUND", "Keys found", "KEYS", "KEYRING", "CAFETERIA", LocalDate.now(), "Keys near table")));
+        cancelledFound.status = "CANCELLED";
+        reports.save(cancelledFound);
+
+        mvc.perform(post("/api/reports/" + cancelledFound.id + "/claims")
+                .with(user("mayank@example.test")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(evidence()))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("Only open found reports can receive claims."));
+    }
+
+    @Test void editOwnReportLifecycleAndRestrictions() throws Exception {
+        ItemReport original = report("LOST", mayank);
+        var originalCreatedAt = original.createdAt;
+
+        // 1. Cannot edit another student's report (403)
+        String editPayload = json.writeValueAsString(new Api.ReportEditInput(
+            "Updated Backpack", "BAGS", "BACKPACK", "CAFETERIA", LocalDate.now(), "Updated backpack description"
+        ));
+        mvc.perform(put("/api/reports/" + original.id)
+                .with(user("bob@example.test")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(editPayload))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.message").value("You can edit only your own reports."));
+
+        // 2. Cannot edit with invalid category, subtype, or future date (400)
+        String invalidSubtype = json.writeValueAsString(new Api.ReportEditInput(
+            "Updated Backpack", "BAGS", "LAPTOP", "CAFETERIA", LocalDate.now(), "Updated backpack description"
+        ));
+        mvc.perform(put("/api/reports/" + original.id)
+                .with(user("mayank@example.test")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(invalidSubtype))
+            .andExpect(status().isBadRequest());
+
+        String futureDate = json.writeValueAsString(new Api.ReportEditInput(
+            "Updated Backpack", "BAGS", "BACKPACK", "CAFETERIA", LocalDate.now().plusDays(2), "Updated backpack description"
+        ));
+        mvc.perform(put("/api/reports/" + original.id)
+                .with(user("mayank@example.test")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(futureDate))
+            .andExpect(status().isBadRequest());
+
+        // 3. Owner can edit their own open report (200)
+        mvc.perform(put("/api/reports/" + original.id)
+                .with(user("mayank@example.test")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(editPayload))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(original.id))
+            .andExpect(jsonPath("$.title").value("Updated Backpack"))
+            .andExpect(jsonPath("$.location").value("CAFETERIA"))
+            .andExpect(jsonPath("$.kind").value("LOST"));
+
+        ItemReport updated = reports.findById(original.id).orElseThrow();
+        assertThat(updated.title).isEqualTo("Updated Backpack");
+        assertThat(updated.location).isEqualTo("CAFETERIA");
+        assertThat(updated.kind).isEqualTo("LOST");
+        assertThat(updated.ownerId).isEqualTo(mayank);
+        assertThat(updated.createdAt.toEpochMilli()).isEqualTo(originalCreatedAt.toEpochMilli());
+
+        // 4. Report with existing claims cannot be edited (409)
+        ItemReport foundItem = report("FOUND", finder);
+        claims.save(new ItemClaim(foundItem.id, mayank, "Blue strap with brass buckle"));
+        String editFound = json.writeValueAsString(new Api.ReportEditInput(
+            "Modified Title", "BAGS", "BACKPACK", "LIBRARY", LocalDate.now(), "Modified description of the item"
+        ));
+        mvc.perform(put("/api/reports/" + foundItem.id)
+                .with(user("finder@example.test")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(editFound))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("Reports with existing claims cannot be edited."));
+
+        // 5. Cannot edit a cancelled report (409)
+        updated.status = "CANCELLED";
+        reports.save(updated);
+        mvc.perform(put("/api/reports/" + updated.id)
+                .with(user("mayank@example.test")).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(editPayload))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("Only open reports can be edited."));
+    }
+
+    @Test void softDeleteReportLifecycleAndNoticeboardExclusion() throws Exception {
+        ItemReport report = report("FOUND", finder);
+        Long id = report.id;
+
+        // Existing claim on the report
+        ItemClaim claim = claims.save(new ItemClaim(id, mayank, "Private owner details for test item"));
+
+        // 1. Cannot delete another student's report (403)
+        mvc.perform(delete("/api/reports/" + id)
+                .with(user("bob@example.test")).with(csrf()))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.message").value("You can delete only your own reports."));
+
+        // 2. Owner can soft-delete their own report (204)
+        mvc.perform(delete("/api/reports/" + id)
+                .with(user("finder@example.test")).with(csrf()))
+            .andExpect(status().isNoContent());
+
+        // 3. Status is CANCELLED in DB
+        ItemReport softDeleted = reports.findById(id).orElseThrow();
+        assertThat(softDeleted.status).isEqualTo("CANCELLED");
+
+        // 4. Cancelled report disappears from active noticeboard (/api/reports)
+        mvc.perform(get("/api/reports"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.id == " + id + ")]").doesNotExist());
+
+        // 5. Cancelled report still visible in owner's My Reports with CANCELLED status
+        mvc.perform(get("/api/me/reports").with(user("finder@example.test")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.id == " + id + ")].status").value("CANCELLED"));
+
+        // 6. Cancelled report does not appear as candidate match for another report
+        ItemReport lostItem = report("LOST", mayank);
+        mvc.perform(get("/api/reports/" + lostItem.id + "/matches").with(user("mayank@example.test")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.report.id == " + id + ")]").doesNotExist());
+
+        // 7. Cannot delete an already cancelled report (409)
+        mvc.perform(delete("/api/reports/" + id)
+                .with(user("finder@example.test")).with(csrf()))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("Report is already inactive."));
+
+        // 8. Existing claim remains in DB intact
+        assertThat(claims.findById(claim.id)).isPresent();
+        assertThat(claims.findById(claim.id).get().reportId).isEqualTo(id);
+    }
 }

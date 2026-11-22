@@ -3,14 +3,13 @@ ADD COLUMN IF NOT EXISTS subtype VARCHAR(40);
 
 UPDATE reports
 SET subtype = CASE
-    WHEN category = 'ELECTRONICS' THEN 'OTHER_ELECTRONICS'
-    WHEN category = 'BAGS'        THEN 'OTHER_BAG'
-    WHEN category = 'BOOKS'       THEN 'OTHER_BOOK'
-    WHEN category = 'KEYS'        THEN 'OTHER_KEY'
-    WHEN category = 'CLOTHING'    THEN 'OTHER_CLOTHING'
-    WHEN category = 'OTHER'       THEN 'MISC'
-END
-WHERE subtype IS NULL;
+    WHEN category = 'ELECTRONICS' THEN COALESCE(subtype, 'OTHER_ELECTRONICS')
+    WHEN category = 'BAGS'        THEN COALESCE(subtype, 'OTHER_BAG')
+    WHEN category = 'BOOKS'       THEN COALESCE(subtype, 'OTHER_BOOK')
+    WHEN category = 'KEYS'        THEN COALESCE(subtype, 'OTHER_KEY')
+    WHEN category = 'CLOTHING'    THEN COALESCE(subtype, 'OTHER_CLOTHING')
+    WHEN category = 'OTHER'       THEN COALESCE(subtype, 'MISC')
+END;
 
 ALTER TABLE reports
 ALTER COLUMN subtype SET NOT NULL;

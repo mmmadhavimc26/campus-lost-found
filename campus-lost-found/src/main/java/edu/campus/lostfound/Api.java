@@ -26,6 +26,10 @@ class Api {
             this(kind, title, category, null, location, eventDate, description);
         }
     }
+    record ReportEditInput(@NotBlank @Size(min=3,max=100) String title, @NotBlank String category,
+                           String subtype,
+                           @NotBlank String location, @NotNull @PastOrPresent LocalDate eventDate,
+                           @NotBlank @Size(min=10,max=700) String description) {}
     record ClaimInput(@NotBlank @Size(min=15,max=1500) String privateDetails) {}
     record UserView(Long id, String name, String role) {}
     record ReportView(Long id, String kind, String title, String category, String subtype, String location, LocalDate eventDate, String description, String status) {}
@@ -45,7 +49,7 @@ class Api {
         );
     }
     @GetMapping("/me") UserView me(Principal p) { CampusUser u=current(p); return new UserView(u.id,u.name,"STUDENT"); }
-    @GetMapping("/reports") List<ReportView> browse() { return reports.findTop200ByOrderByCreatedAtDesc().stream().map(Api::view).toList(); }
+    @GetMapping("/reports") List<ReportView> browse() { return reports.findTop200ByStatusOrderByCreatedAtDesc("OPEN").stream().map(Api::view).toList(); }
     @GetMapping("/me/reports") List<ReportView> mine(Principal p) { return reports.findByOwnerIdOrderByCreatedAtDesc(current(p).id).stream().map(Api::view).toList(); }
     @PostMapping("/reports") @ResponseStatus(HttpStatus.CREATED)
     Map<String,Object> create(@Valid @RequestBody ReportInput input, Principal p) {
@@ -60,9 +64,40 @@ class Api {
         reports.save(r);
         return Map.of("report",view(r),"possibleDuplicates",duplicates);
     }
+    @PutMapping("/reports/{id}")
+    ReportView edit(@PathVariable Long id, @Valid @RequestBody ReportEditInput input, Principal p) {
+        ItemReport r = report(id);
+        CampusUser u = current(p);
+        if (!r.ownerId.equals(u.id)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can edit only your own reports.");
+        if (!"OPEN".equals(r.status)) throw new ResponseStatusException(HttpStatus.CONFLICT, "Only open reports can be edited.");
+        if (claims.existsByReportId(id)) throw new ResponseStatusException(HttpStatus.CONFLICT, "Reports with existing claims cannot be edited.");
+        if (!MatchingService.CATEGORIES.contains(input.category()) || !MatchingService.LOCATIONS.contains(input.location()))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a listed category and campus location.");
+        String subtype = input.subtype() != null && !input.subtype().isBlank() ? input.subtype().strip() : MatchingService.defaultSubtype(input.category());
+        if (!MatchingService.isValidSubtype(input.category(), subtype))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a valid subtype for category " + input.category());
+        r.title = input.title().strip();
+        r.category = input.category();
+        r.subtype = subtype;
+        r.location = input.location();
+        r.eventDate = input.eventDate();
+        r.description = input.description().strip();
+        reports.save(r);
+        return view(r);
+    }
+    @DeleteMapping("/reports/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(@PathVariable Long id, Principal p) {
+        ItemReport r = report(id);
+        CampusUser u = current(p);
+        if (!r.ownerId.equals(u.id)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can delete only your own reports.");
+        if (!"OPEN".equals(r.status)) throw new ResponseStatusException(HttpStatus.CONFLICT, "Report is already inactive.");
+        r.status = "CANCELLED";
+        reports.save(r);
+    }
     @GetMapping("/reports/{id}/matches") List<MatchView> matches(@PathVariable Long id, Principal p) {
         ItemReport source=report(id);
         if (!source.ownerId.equals(current(p).id)) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"You can request matches for your own reports.");
+        if (!"OPEN".equals(source.status)) return List.of();
         return reports.findByCategoryAndStatus(source.category,"OPEN").stream()
             .filter(x -> MatchingService.compatible(source,x))
             .map(x -> {

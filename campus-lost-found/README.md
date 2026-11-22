@@ -7,6 +7,7 @@ A Spring Boot application for reporting lost and found items on campus. The fron
 - Dummy student login: choose Mayank or Test. Sessions and CSRF protection remain enabled; no email, password or registration is required.
 - Public noticeboard with report type, category, subtype and keyword search filters (latest 200 reports).
 - Lost and found report creation with a validated 37-subtype taxonomy.
+- Report management: students can edit their own open reports (if no claims have been submitted) or remove them with confirmation via soft-deletion (`CANCELLED`).
 - Typo-tolerant ranked matching (Matching Engine V2) with strict textual evidence gating.
 - Duplicate report warnings that retain both reports.
 - Private text ownership evidence: one pending claim per student per found report.
@@ -54,8 +55,8 @@ Run tests:
 # Backend test suite (Maven / JUnit 5)
 .\mvnw.cmd test
 
-# Frontend session-recovery test suite (Node.js 18+)
-node --test src/test/js/session-recovery.test.cjs
+# Frontend test suites (Node.js 18+)
+node --test src/test/js/*.test.cjs
 ```
 
 Build executable JAR:
@@ -129,6 +130,8 @@ GET `/api/csrf` first, retain the session cookie and send the returned token usi
 | GET | `/api/reports` | Public | Public noticeboard (latest 200 reports) |
 | GET | `/api/me/reports` | Student | Reports submitted by current user |
 | POST | `/api/reports` | Student + CSRF | Create a lost or found report |
+| PUT | `/api/reports/{id}` | Report owner + CSRF | Edit own open report without claims |
+| DELETE | `/api/reports/{id}` | Report owner + CSRF | Soft-delete own open report (`CANCELLED`) |
 | GET | `/api/reports/{id}/matches` | Report owner | Retrieve ranked potential matches |
 | POST | `/api/reports/{id}/claims` | Student other than finder + CSRF | Submit private ownership claim |
 | GET | `/api/me/claims` | Student | Claims submitted by current user |

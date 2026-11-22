@@ -9,10 +9,12 @@ interface Users extends JpaRepository<CampusUser, Long> {
 }
 interface Reports extends JpaRepository<ItemReport, Long> {
     List<ItemReport> findTop200ByOrderByCreatedAtDesc();
+    List<ItemReport> findTop200ByStatusOrderByCreatedAtDesc(String status);
     List<ItemReport> findByOwnerIdOrderByCreatedAtDesc(Long id);
     List<ItemReport> findByCategoryAndStatus(String category, String status);
 }
 interface Claims extends JpaRepository<ItemClaim, Long> {
+    boolean existsByReportId(Long reportId);
     boolean existsByReportIdAndClaimantId(Long report, Long user);
     List<ItemClaim> findByClaimantIdOrderByCreatedAtDesc(Long user);
 }

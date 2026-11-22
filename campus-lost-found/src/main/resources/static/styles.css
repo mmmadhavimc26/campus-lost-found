@@ -54,6 +54,8 @@ p { margin: 0 0 12px; }
 .button { padding: 9px 16px; border: 1px solid var(--border); border-radius: 3px; font-weight: bold; }
 .primary { background: var(--blue); border-color: var(--blue); color: #fff; }
 .primary:hover { background: #193b5b; }
+.danger { background: #a12424; border-color: #a12424; color: #fff; }
+.danger:hover { background: #821c1c; }
 .secondary { background: #fff; color: var(--blue); }
 .board { background: #fff; border: 1px solid var(--border); }
 .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
@@ -83,6 +85,8 @@ textarea { resize: vertical; }
 .report-status { color: var(--muted); font-size: 12px; }
 .link-button { border: 0; padding: 3px 0; background: none; color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
 .report-actions .link-button { font-weight: bold; font-size: 13px; }
+.report-actions .link-button.danger-link { color: #a12424; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .report-extra { grid-column: 1 / -1; }
 .match-summary { grid-column: 1 / -1; color: var(--muted); font-size: 13px; margin: 0 0 8px; }
 .private { padding: 12px; border: 1px solid var(--border); background: #f7f8fa; white-space: pre-wrap; overflow-wrap: anywhere; }
