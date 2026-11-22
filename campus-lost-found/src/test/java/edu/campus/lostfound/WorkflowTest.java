@@ -31,7 +31,7 @@ class WorkflowTest {
         users.save(new CampusUser("Bob","bob@example.test","UNUSED"));
     }
     ItemReport report(String kind, Long owner) {
-        return reports.save(new ItemReport(owner,new Api.ReportInput(kind,"Black backpack","BAGS","LIBRARY",LocalDate.now().minusDays(1),"A black backpack near the entrance")));
+        return reports.save(new ItemReport(owner,new Api.ReportInput(kind,"Black backpack","BAGS","BACKPACK","LIBRARY",LocalDate.now().minusDays(1),"A black backpack near the entrance")));
     }
     String evidence() throws Exception { return json.writeValueAsString(Map.of("privateDetails","Hidden violet stitching and a small green notebook inside.")); }
     @Test void competingClaimsStayPendingAndPrivateAndCannotBeRepeated() throws Exception {
@@ -72,7 +72,7 @@ class WorkflowTest {
     }
     @Test void duplicatesAreFlaggedAndRetained() throws Exception {
         report("LOST",mayank);
-        String body=json.writeValueAsString(new Api.ReportInput("LOST","Black backpack","BAGS","LIBRARY",LocalDate.now().minusDays(1),"A black backpack near the entrance"));
+        String body=json.writeValueAsString(new Api.ReportInput("LOST","Black backpack","BAGS","BACKPACK","LIBRARY",LocalDate.now().minusDays(1),"A black backpack near the entrance"));
         mvc.perform(post("/api/reports").with(user("mayank@example.test")).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated()).andExpect(jsonPath("$.possibleDuplicates.length()").value(1));
         assertThat(reports.count()).isEqualTo(2);
@@ -92,8 +92,16 @@ class WorkflowTest {
     }
     @Test void demoLoginRejectsArbitraryAccountsAndRoleInjection() throws Exception {
         mvc.perform(get("/api/auth/demo-accounts"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(3))
-            .andExpect(jsonPath("$[0].email").doesNotExist());
+            .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2))
+            .andExpect(jsonPath("$[0].key").value("mayank"))
+            .andExpect(jsonPath("$[0].name").value("Mayank (demo student)"))
+            .andExpect(jsonPath("$[0].email").doesNotExist())
+            .andExpect(jsonPath("$[1].key").value("bob"))
+            .andExpect(jsonPath("$[1].name").value("Test (demo student)"))
+            .andExpect(jsonPath("$[1].email").doesNotExist());
+        mvc.perform(post("/api/auth/demo").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"account\":\"finder\"}"))
+            .andExpect(status().isBadRequest());
         mvc.perform(post("/api/auth/demo").with(csrf()).contentType(MediaType.APPLICATION_JSON)
             .content("{\"account\":\"admin\"}"))
             .andExpect(status().isBadRequest());
@@ -116,11 +124,59 @@ class WorkflowTest {
             .andExpect(status().isOk()).andReturn();
         assertThat(json.readTree(second.getResponse().getContentAsString()).get("id").asLong()).isNotEqualTo(mayankId);
         mvc.perform(get("/api/me").session((MockHttpSession)second.getRequest().getSession(false)))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Bob (demo student)"));
+            .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Test (demo student)"));
         var again=mvc.perform(post("/api/auth/demo").with(csrf()).contentType(MediaType.APPLICATION_JSON)
             .content("{\"account\":\"mayank\"}"))
             .andExpect(status().isOk()).andReturn();
         assertThat(json.readTree(again.getResponse().getContentAsString()).get("id").asLong()).isEqualTo(mayankId);
+    }
+    @Test void existingBobRecordNameIsUpdatedToTest() throws Exception {
+        CampusUser existing = users.findByEmail("bob@demo.invalid").orElseGet(() ->
+            users.saveAndFlush(new CampusUser("Bob (demo student)", "bob@demo.invalid", "UNUSED"))
+        );
+        existing.name = "Old Bob Name";
+        users.saveAndFlush(existing);
+
+        mvc.perform(post("/api/auth/demo").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"account\":\"bob\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value("Test (demo student)"));
+
+        CampusUser updated = users.findByEmail("bob@demo.invalid").orElseThrow();
+        assertThat(updated.name).isEqualTo("Test (demo student)");
+        assertThat(updated.id).isEqualTo(existing.id);
+    }
+    @Test void existingFinderReportsAndClaimsRemainAssociatedWhenFinderIsNotSelectable() throws Exception {
+        CampusUser oldFinder = users.saveAndFlush(new CampusUser("Finder (demo student)", "finder@demo.invalid", "UNUSED"));
+        ItemReport report = reports.saveAndFlush(new ItemReport(oldFinder.id,
+            new Api.ReportInput("FOUND", "Vintage Camera", "ELECTRONICS", "LIBRARY", LocalDate.now().minusDays(1), "Found in reading room.")));
+        CampusUser claimant = users.saveAndFlush(new CampusUser("Claimant", "claimant@demo.invalid", "UNUSED"));
+        ItemClaim claim = claims.saveAndFlush(new ItemClaim(report.id, claimant.id, "Silver body, black strap."));
+
+        mvc.perform(post("/api/auth/demo").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"account\":\"finder\"}"))
+            .andExpect(status().isBadRequest());
+
+        ItemReport fetchedReport = reports.findById(report.id).orElseThrow();
+        assertThat(fetchedReport.ownerId).isEqualTo(oldFinder.id);
+
+        ItemClaim fetchedClaim = claims.findById(claim.id).orElseThrow();
+        assertThat(fetchedClaim.reportId).isEqualTo(report.id);
+        assertThat(fetchedClaim.claimantId).isEqualTo(claimant.id);
+        assertThat(claims.findByClaimantIdOrderByCreatedAtDesc(claimant.id)).hasSize(1);
+        assertThat(reports.findByOwnerIdOrderByCreatedAtDesc(oldFinder.id)).hasSize(1);
+    }
+    @Test void demoDataSeedsUnderBobAndDoesNotFail() throws Exception {
+        claims.deleteAll(); reports.deleteAll();
+        DemoAccounts demoAccounts = new DemoAccounts(users);
+        DemoData demoData = new DemoData(demoAccounts, reports);
+        demoData.run(null);
+
+        assertThat(reports.count()).isEqualTo(3);
+        CampusUser bob = users.findByEmail("bob@demo.invalid").orElseThrow();
+        for (ItemReport r : reports.findAll()) {
+            assertThat(r.ownerId).isEqualTo(bob.id);
+        }
     }
     @Test void rejectsFutureDatesAndMissingEvidence() throws Exception {
         String body=json.writeValueAsString(new Api.ReportInput("LOST","Backpack","BAGS","LIBRARY",LocalDate.now().plusDays(2),"A general description"));
@@ -168,5 +224,33 @@ class WorkflowTest {
             .contentType(MediaType.APPLICATION_JSON).content(evidence()))
             .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("PENDING"));
         assertThat(claims.count()).isEqualTo(1);
+    }
+
+    @Test void optionsReturnsCategoriesSubtypesAndLocations() throws Exception {
+        mvc.perform(get("/api/options"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.categories.length()").value(6))
+            .andExpect(jsonPath("$.subtypesByCategory.ELECTRONICS.length()").value(8))
+            .andExpect(jsonPath("$.subtypesByCategory.BAGS.length()").value(6))
+            .andExpect(jsonPath("$.locations.length()").value(7));
+    }
+
+    @Test void rejectsInvalidSubtypeForCategory() throws Exception {
+        String body = json.writeValueAsString(new Api.ReportInput(
+            "LOST", "ThinkPad Laptop", "ELECTRONICS", "BACKPACK", "LIBRARY", LocalDate.now(), "A black laptop left in study room."
+        ));
+        mvc.perform(post("/api/reports").with(user("mayank@example.test")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test void acceptsValidSubtypeOnReportCreation() throws Exception {
+        String body = json.writeValueAsString(new Api.ReportInput(
+            "LOST", "ThinkPad Laptop", "ELECTRONICS", "LAPTOP", "LIBRARY", LocalDate.now(), "A black laptop left in study room."
+        ));
+        mvc.perform(post("/api/reports").with(user("mayank@example.test")).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.report.subtype").value("LAPTOP"));
     }
 }

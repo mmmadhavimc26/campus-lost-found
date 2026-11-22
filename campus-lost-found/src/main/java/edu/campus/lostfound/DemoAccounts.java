@@ -14,8 +14,7 @@ class DemoAccounts implements ApplicationRunner {
 
     static final List<Profile> PROFILES = List.of(
         new Profile("mayank", "Mayank (demo student)", "mayank@demo.invalid"),
-        new Profile("bob", "Bob (demo student)", "bob@demo.invalid"),
-        new Profile("finder", "Finder (demo student)", "finder@demo.invalid")
+        new Profile("bob", "Test (demo student)", "bob@demo.invalid")
     );
 
     private final Users users;
@@ -28,8 +27,16 @@ class DemoAccounts implements ApplicationRunner {
     public CampusUser account(String key) {
         Profile profile = PROFILES.stream().filter(item -> item.key().equals(key)).findFirst()
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a listed demo student."));
-        return users.findByEmail(profile.email()).orElseGet(() ->
-            users.saveAndFlush(new CampusUser(profile.name(), profile.email(), "UNUSED")));
+        return users.findByEmail(profile.email())
+            .map(existing -> {
+                if (!profile.name().equals(existing.name)) {
+                    existing.name = profile.name();
+                    return users.saveAndFlush(existing);
+                }
+                return existing;
+            })
+            .orElseGet(() ->
+                users.saveAndFlush(new CampusUser(profile.name(), profile.email(), "UNUSED")));
     }
 
     @Override

@@ -21,6 +21,7 @@ class ItemReport {
     String kind;
     String title;
     String category;
+    @Column(nullable=false) String subtype;
     String location;
     @Column(name="event_date") LocalDate eventDate;
     @Column(length=700) String description;
@@ -29,6 +30,7 @@ class ItemReport {
     protected ItemReport() {}
     ItemReport(Long owner, Api.ReportInput input) {
         ownerId=owner; kind=input.kind(); title=input.title().strip(); category=input.category();
+        subtype = input.subtype() != null && !input.subtype().isBlank() ? input.subtype().strip() : MatchingService.defaultSubtype(input.category());
         location=input.location(); eventDate=input.eventDate(); description=input.description().strip();
     }
 }

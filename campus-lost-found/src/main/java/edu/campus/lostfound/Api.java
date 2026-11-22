@@ -19,20 +19,31 @@ class Api {
     Api(Users users, Reports reports, Claims claims) { this.users=users; this.reports=reports; this.claims=claims; }
     record ReportInput(@NotBlank @Pattern(regexp="LOST|FOUND") String kind,
                        @NotBlank @Size(min=3,max=100) String title, @NotBlank String category,
+                       String subtype,
                        @NotBlank String location, @NotNull @PastOrPresent LocalDate eventDate,
-                       @NotBlank @Size(min=10,max=700) String description) {}
+                       @NotBlank @Size(min=10,max=700) String description) {
+        public ReportInput(String kind, String title, String category, String location, LocalDate eventDate, String description) {
+            this(kind, title, category, null, location, eventDate, description);
+        }
+    }
     record ClaimInput(@NotBlank @Size(min=15,max=1500) String privateDetails) {}
     record UserView(Long id, String name, String role) {}
-    record ReportView(Long id, String kind, String title, String category, String location, LocalDate eventDate, String description, String status) {}
-    record MatchView(ReportView report, int score, String reason) {}
+    record ReportView(Long id, String kind, String title, String category, String subtype, String location, LocalDate eventDate, String description, String status) {}
+    record MatchView(ReportView report, int score, String classification, String reason) {}
     record ClaimView(Long id, ReportView report, String status, String privateDetails, Instant createdAt) {}
-    static ReportView view(ItemReport r) { return new ReportView(r.id,r.kind,r.title,r.category,r.location,r.eventDate,r.description,r.status); }
+    static ReportView view(ItemReport r) { return new ReportView(r.id,r.kind,r.title,r.category,r.subtype,r.location,r.eventDate,r.description,r.status); }
     private CampusUser current(Principal p) { return users.findByEmail(p.getName()).orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED)); }
     private ItemReport report(Long id) { return reports.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,"Report not found.")); }
 
     @GetMapping("/health") Map<String,String> health() { return Map.of("status","UP","milestone","1"); }
     @GetMapping("/csrf") Map<String,String> csrf(CsrfToken token) { return Map.of("token",token.getToken(),"headerName",token.getHeaderName()); }
-    @GetMapping("/options") Map<String,Object> options() { return Map.of("categories",MatchingService.CATEGORIES,"locations",MatchingService.LOCATIONS); }
+    @GetMapping("/options") Map<String,Object> options() {
+        return Map.of(
+            "categories", MatchingService.CATEGORIES,
+            "subtypesByCategory", MatchingService.SUBTYPES_BY_CATEGORY,
+            "locations", MatchingService.LOCATIONS
+        );
+    }
     @GetMapping("/me") UserView me(Principal p) { CampusUser u=current(p); return new UserView(u.id,u.name,"STUDENT"); }
     @GetMapping("/reports") List<ReportView> browse() { return reports.findTop200ByOrderByCreatedAtDesc().stream().map(Api::view).toList(); }
     @GetMapping("/me/reports") List<ReportView> mine(Principal p) { return reports.findByOwnerIdOrderByCreatedAtDesc(current(p).id).stream().map(Api::view).toList(); }
@@ -40,7 +51,10 @@ class Api {
     Map<String,Object> create(@Valid @RequestBody ReportInput input, Principal p) {
         if (!MatchingService.CATEGORIES.contains(input.category()) || !MatchingService.LOCATIONS.contains(input.location()))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Choose a listed category and campus location.");
-        ItemReport r=new ItemReport(current(p).id,input);
+        String subtype = input.subtype() != null && !input.subtype().isBlank() ? input.subtype().strip() : MatchingService.defaultSubtype(input.category());
+        if (!MatchingService.isValidSubtype(input.category(), subtype))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a valid subtype for category " + input.category());
+        ItemReport r=new ItemReport(current(p).id,new ReportInput(input.kind(), input.title(), input.category(), subtype, input.location(), input.eventDate(), input.description()));
         List<ReportView> duplicates=reports.findByCategoryAndStatus(r.category,"OPEN").stream()
             .filter(x -> MatchingService.possibleDuplicate(r,x)).map(Api::view).toList();
         reports.save(r);
@@ -51,8 +65,10 @@ class Api {
         if (!source.ownerId.equals(current(p).id)) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"You can request matches for your own reports.");
         return reports.findByCategoryAndStatus(source.category,"OPEN").stream()
             .filter(x -> MatchingService.compatible(source,x))
-            .map(x -> new MatchView(view(x),MatchingService.score(source,x),
-                "Same category; found within 14 days of loss; " + (source.location.equals(x.location) && !"OTHER".equals(source.location) ? "same campus zone." : "different or unspecified campus zone.")))
+            .map(x -> {
+                var eval = MatchingService.evaluate(source, x);
+                return new MatchView(view(x), eval.score(), eval.classification(), eval.explanation());
+            })
             .sorted(Comparator.comparingInt(MatchView::score).reversed().thenComparing(m -> m.report().id())).toList();
     }
     @PostMapping("/reports/{id}/claims") @ResponseStatus(HttpStatus.CREATED) @Transactional

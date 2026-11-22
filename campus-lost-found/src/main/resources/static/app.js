@@ -124,7 +124,7 @@ function renderReport(report, action = 'claim') {
   metadata.append(
     element('span', '', label(report.location)),
     element('span', '', report.eventDate),
-    element('span', '', label(report.category)),
+    element('span', '', label(report.category) + (report.subtype ? ' • ' + label(report.subtype) : '')),
     element('span', '', `Report #${report.id}`)
   );
   body.append(heading, metadata, element('p', 'description', report.description));
@@ -232,7 +232,7 @@ async function loadMatches(id) {
     const matches = await api(`/reports/${id}/matches`);
     const rows = matches.map(match => {
       const row = renderReport(match.report);
-      row.prepend(element('p', 'match-summary', `Match score: ${match.score}/100. ${match.reason}`));
+      row.prepend(element('p', 'match-summary', `Match score: ${match.score}/100 (${match.classification || 'Match'}). ${match.reason}`));
       return row;
     });
     container.replaceChildren(...rows);
@@ -334,6 +334,20 @@ async function initialise() {
         $('#' + id).append(option);
       }
     }
+    const updateSubtypes = () => {
+      const cat = $('#report-category').value;
+      const subtypes = (options.subtypesByCategory && options.subtypesByCategory[cat]) || [];
+      const select = $('#report-subtype');
+      if (select) {
+        select.replaceChildren(...subtypes.map(s => {
+          const opt = element('option', '', label(s));
+          opt.value = s;
+          return opt;
+        }));
+      }
+    };
+    $('#report-category').onchange = updateSubtypes;
+    updateSubtypes();
     const now = new Date();
     $('#report-form [name=eventDate]').max = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
     const response = await fetch('/api/me');

@@ -1,30 +1,38 @@
 # Campus Lost and Found
 
-A Spring Boot application for reporting lost and found items on campus. The frontend uses HTML, CSS and JavaScript and is served by the same application.
+A Spring Boot application for reporting lost and found items on campus. The frontend uses plain HTML, CSS and JavaScript served directly by the backend.
 
 ## Working features
 
-- Dummy student login: choose Mayank, Bob or Finder. Sessions and CSRF protection remain enabled; no email, password or registration is required.
-- Public noticeboard with type, category and search filters (latest 200 reports).
-- Lost/found report creation, own reports and ranked possible matches.
-- Duplicate warnings that retain both reports.
-- Private text ownership evidence, one pending claim per student per found report.
-- Competing pending claims from different demo students, separated by the selected account.
-- Flyway database migrations, automated tests and Render Docker configuration.
+- Dummy student login: choose Mayank or Test. Sessions and CSRF protection remain enabled; no email, password or registration is required.
+- Public noticeboard with report type, category, subtype and keyword search filters (latest 200 reports).
+- Lost and found report creation with a validated 37-subtype taxonomy.
+- Typo-tolerant ranked matching (Matching Engine V2) with strict textual evidence gating.
+- Duplicate report warnings that retain both reports.
+- Private text ownership evidence: one pending claim per student per found report.
+- Competing pending claims from different demo students, separated by account.
+- Idempotent Flyway database migrations (V1, V2, V3), automated test suites and Docker container configuration.
 
-## Not implemented yet
+## Current status and planned work
 
-No real student authentication, admin login, staff dashboard, approval/rejection actions, file uploads, physical handover, recovered status, report closure, password recovery or verified campus emails. All accounts are STUDENT accounts; all reports stay OPEN and claims stay PENDING. Staff evidence review is planned for milestone 2. This version stops at pending claims.
+Implemented in this milestone:
+- Reports remain OPEN and claims remain PENDING.
+- Public noticeboard entries show general descriptions, categories, subtypes, campus zones and dates. Identifying details (serial numbers, hidden contents) are withheld from public view and stored only in private claims.
+- The dummy login allows evaluating workflows without real student credentials.
 
-See [project design, diagrams and review script](docs/PROJECT.md).
+Planned for future milestones:
+- Staff evidence review interface.
+- Approval and rejection decisions with recorded reasons.
+- Dispute resolution for competing claims.
+- Atomic physical handover confirmation, marking items RECOVERED and closing linked reports.
 
 ## Technology
 
-Java 17, Spring Boot 3.5.16, Spring MVC, JPA, Security, Maven and Flyway. PostgreSQL on Render; file-backed H2 locally. The Java interface is a REST backend and the frontend uses plain browser files.
+Java 17, Spring Boot 3.5.16, Spring MVC, Data JPA, Spring Security, Maven and Flyway. Production uses PostgreSQL (Supabase or Render); local development and testing use file-backed or in-memory H2 in PostgreSQL compatibility mode. The frontend uses standard browser APIs without external JavaScript frameworks.
 
-## Run locally
+## Local setup and execution
 
-Install JDK 17 and set JAVA_HOME. The Maven wrapper needs internet on its first run.
+Install JDK 17 and ensure `JAVA_HOME` is set.
 
 Windows PowerShell:
 
@@ -38,101 +46,136 @@ macOS/Linux:
 sh ./mvnw spring-boot:run
 ```
 
-Open http://localhost:8080, select **Demo login**, choose a student and continue. Mayank and Bob can submit competing claims; Finder can report found items. Three fictional reports are inserted only into an empty report database. Set `SEED_DEMO=false` to disable them. Local records persist under `data/`, which is excluded from Git.
+Open http://localhost:8080, select **Demo login**, choose Mayank or Test and continue. Three fictional demo reports are inserted when starting with an empty database. Set `SEED_DEMO=false` to start with a blank noticeboard. Local records persist under `data/`, which is excluded from Git.
 
-Tests and executable JAR:
+Run tests:
 
 ```powershell
-.\mvnw.cmd clean verify
-java -jar target/lost-found-0.1.0.jar
-```
+# Backend test suite (Maven / JUnit 5)
+.\mvnw.cmd test
 
-## Deploy to Render
-
-1. Commit and push this repository. The application lives in its `campus-lost-found/` subdirectory. Exclude `target/`, `data/` and `.env`.
-2. In Render choose **New → Blueprint**, connect that repository and select its branch. Set **Blueprint Path** to `campus-lost-found/render.yaml`. The service uses `rootDir: campus-lost-found` to find the application and Dockerfile.
-3. Review the proposed plans and any costs, then apply. The Blueprint creates a Docker web service and PostgreSQL database and wires their environment variables.
-4. Wait for the build and health check. Open the HTTPS service URL, select a demo student and test a report and claim.
-5. If free plans are unavailable, select available plans in `render.yaml` before deploying. Render controls free database availability/expiry; back up records you need to keep.
-
-The Docker build runs `clean verify`; failing tests stop deployment. The app listens on Render's `PORT`, binds to `0.0.0.0` and uses `/api/health` for its process health check. The health endpoint is not an ongoing database readiness probe.
-
-For manual setup, select Docker and set these variables:
-
-| Variable | Value |
-| --- | --- |
-| `SPRING_PROFILES_ACTIVE` | `prod` |
-| `DB_HOST` | Render database internal hostname |
-| `DB_PORT` | `5432` |
-| `DB_NAME` | Database name |
-| `DB_USER` | Database username |
-| `DB_PASSWORD` | Database password, stored as a secret |
-| `SEED_DEMO` | `true` for fictional sample reports, otherwise `false` |
-
-Use the same region for the database and service. Individual database values form the JDBC URL; do not paste a `postgresql://...` URL into a JDBC property. Production enables secure session cookies, so access it over HTTPS. The local profile permits HTTP localhost.
-
-Reports/claims persist in PostgreSQL, not the container filesystem. Sessions are memory-based: redeployment signs users out. Use one service instance for this milestone.
-
-Official references: [Render Docker](https://render.com/docs/docker), [Blueprints](https://render.com/docs/blueprint-spec), [PostgreSQL](https://render.com/docs/postgresql-creating-connecting), [Spring Boot requirements](https://docs.spring.io/spring-boot/3.5/system-requirements.html).
-
-## API
-
-GET `/api/csrf` first, retain the session cookie and send the returned token using its `headerName` for writes. Refresh the token after login/logout. Same-origin browser requests need no CORS setup.
-
-| Method | Path | Access |
-| --- | --- | --- |
-| GET | `/api/reports`, `/api/options`, `/api/csrf`, `/api/health` | Public |
-| GET | `/api/auth/demo-accounts` | Public; three fixed demo students |
-| POST | `/api/auth/demo` | Public + CSRF; JSON `{"account":"mayank"}`, `bob` or `finder` |
-| POST | `/api/auth/logout` | Session + CSRF |
-| GET | `/api/me`, `/api/me/reports`, `/api/me/claims` | Student, own data |
-| POST | `/api/reports` | Student + CSRF |
-| GET | `/api/reports/{id}/matches` | Report owner |
-| POST | `/api/reports/{id}/claims` | Student other than finder + CSRF |
-
-Public report DTOs omit emails, hashes and ownership evidence. Demo accounts are shared: anyone can select an account and view its claims. Use fictional details only; this is not real authentication. Evidence is text only and is not encrypted at the application field level. Database operators can read it: restrict credentials and backups.
-
-## Before real campus use
-
-Replace dummy login with real student and admin authentication. Add verified campus accounts, rate limits, password recovery, moderation, staff provisioning, retention/deletion policies, audit records, backup/restore procedures and the full decision/handover workflow. The 14-day window assumes accurate dates and exact categories; approximate dates and nearby-zone matching are future enhancements.
-
-## Demo access and background jobs
-
-The three demo students are created automatically, including when `SEED_DEMO=false`. That setting controls sample reports only. Password login and registration endpoints are disabled. Existing user/report rows are retained, but old password accounts cannot sign in through the demo screen. The `password_hash` database column is retained for migration compatibility and is not checked by dummy login.
-
-A GitHub Actions workflow pings the deployed health endpoint every 10 minutes after it is pushed to the default branch. There is no Render cron service or Spring scheduled job. Matching runs on request when the student chooses Find matches. Flyway migrations and optional sample report creation run at startup. No email notifications or automatic claim processing are implemented.
-
-Manual Render deployment requires `SPRING_PROFILES_ACTIVE=prod`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD`. `SEED_DEMO=true` is optional for sample reports. Render provides `PORT`; no Supabase variables or cron variables are used.
-
-## Session expiry and logs
-
-A Render restart or redeploy ends in-memory demo sessions. The frontend refreshes rejected CSRF tokens once. If sign-in is also lost, it asks for a demo student again and keeps the open report or claim form. Submit the form after re-entry; network failures are not automatically retried because their outcome may be unknown.
-
-Hikari startup and shutdown messages are normal database-pool lifecycle logs. They occur when the application starts or stops, not for every report. They do not establish why the host restarted the application.
-
-Run frontend session-recovery tests with Node.js 18 or later:
-
-```sh
+# Frontend session-recovery test suite (Node.js 18+)
 node --test src/test/js/session-recovery.test.cjs
 ```
 
-The Docker/Maven build runs the backend tests. The Node tests are a separate check.
+Build executable JAR:
 
-## Scheduled website ping
+```powershell
+.\mvnw.cmd clean package
+java -jar target/lost-found-0.1.0.jar
+```
 
-The repository-root workflow `.github/workflows/keep-site-awake.yml` checks:
+## Demo accounts
 
-`https://campus-lost-found-7pw0.onrender.com/api/health`
+Two fixed demo students are provided:
+- **Mayank** (`mayank`, display: `Mayank (demo student)`)
+- **Test** (`bob`, display: `Test (demo student)`)
 
-It runs every 10 minutes, at minutes 03, 13, 23, 33, 43 and 53 UTC. It checks for HTTP 200 and JSON `status: UP`, with up to six attempts to allow a sleeping service to start. It never signs in, changes reports or processes claims. The health endpoint reports that the application is responding; it does not query the database.
+Demo accounts share sessions across browsers. Use fictional details only; this mechanism is intended for evaluation and demonstration. Historical database accounts (such as `finder`) remain preserved in the database to maintain referential integrity with existing records, but cannot be selected for demo sign-in.
 
-To activate it:
+## Matching Engine V2
 
-1. Commit and push the workflow to the repository's default branch (`main`). The file must be in the Git repository root, one level above this application folder.
-2. Open the repository on GitHub and choose **Actions → Keep site awake**.
-3. If GitHub asks you to enable Actions, enable it for the repository.
-4. Choose **Run workflow** to test it immediately, then inspect the run result.
+When a student selects **Find matches** on a report, the backend evaluates candidate reports of the opposite type (`LOST` versus `FOUND`) in the same category. Candidates are evaluated symmetrically regardless of submission order.
 
-No additional Render service or new secret/environment variable is needed. GitHub Actions runner usage counts toward your account's allowance. Scheduled runs can be delayed or dropped, and public repositories' schedules can be disabled after 60 days without activity. The ping can reduce idle sleep but does not guarantee uptime or prevent Render restarts, session expiry or database-plan expiration.
+### Eligibility rules
+- Both reports must be `OPEN`.
+- Reports must belong to opposite kinds (`LOST` vs `FOUND`) within the same category.
+- Found date must be 0–14 calendar days after loss date.
+- Incompatible specific subtypes are disqualified.
 
-References: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule and https://render.com/docs/free
+### Scoring components (0–100 points)
+1. **Subtype (up to 35 points):**
+   - 35 points: Both reports share the same specific subtype (e.g., `LAPTOP` to `LAPTOP`).
+   - 20 points: Generic subtype fallback (`OTHER_*` or `MISC` matched with any subtype in the category).
+   - 0 points & disqualified: Different specific subtypes within the same category (e.g., `LAPTOP` vs `SMARTPHONE`).
+2. **Campus zone (up to 20 points):**
+   - 20 points: Reports share the same named campus location.
+   - 0 points: Different locations or `OTHER`.
+3. **Date gap (up to 20 points):**
+   - 20 points: 0–1 day gap between loss and found dates.
+   - 12 points: 2–7 day gap.
+   - 5 points: 8–14 day gap.
+4. **Keyword similarity (up to 25 points):**
+   - Tokenization: words lowercased, non-alphanumeric characters stripped, words under 3 characters and stopwords filtered.
+   - Category-aware synonym canonicalization: maps domain synonyms within their category (e.g., `notebook` &rarr; `laptop` in ELECTRONICS; `flask` &rarr; `bottle` in OTHER; `diary` &rarr; `planner` in BOOKS).
+   - Typo tolerance: Damerau-Levenshtein distance with adjacent transposition cost 1. Matched if similarity &ge; 0.80 and token length &ge; 4. Numeric and model codes require exact match.
+   - Protected confusable words: blocks false-positive fuzzy matches between distinct words (e.g., `bottle`/`battle`, `white`/`write`, `metal`/`medal`, `chair`/`chain`).
+   - Bipartite matching: genuine two-stage optimization (maximizes cardinality $K$ via augmenting paths first, then maximizes total similarity via min-cost flow with deterministic tie-breaking).
+   - Jaccard similarity: $J = |M| / (|A| + |B| - |M|)$. Points: $\text{round}(J \times 25)$.
+
+### Evidence gating
+- **Zero Evidence Rule:** A report pair with zero matched keywords ($|M| = 0$) is immediately discarded (score 0), even if subtype, location and dates match.
+- **Strong Match:** Score &ge; 75, $|M| \ge 2$, and $J \ge 0.30$.
+- **Possible Match:** Score &ge; 50, $|M| \ge 1$, and $J \ge 0.10$ (capped at 74 if raw score &ge; 75 fails the Strong gate).
+- **Weak Match:** Score &ge; 40, $|M| \ge 1$ (capped at 49 if raw score &ge; 50 fails the Possible gate).
+- **Discarded:** Score < 40 or $|M| = 0$.
+
+### Duplicate warnings
+A report submission checks for potential duplicates with existing `OPEN` reports having the same kind, category, location, compatible subtypes, event date within 1 day, and either an identical case-insensitive title or description Jaccard similarity &ge; 0.50. The creation response returns warnings while retaining both reports.
+
+## API
+
+GET `/api/csrf` first, retain the session cookie and send the returned token using its `headerName` for write operations. Refresh the token after login or logout.
+
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| GET | `/api/health` | Public | Process health check (`status: UP`) |
+| GET | `/api/csrf` | Public | CSRF token and header name |
+| GET | `/api/options` | Public | Categories, subtypes by category and locations |
+| GET | `/api/auth/demo-accounts` | Public | Selectable demo students (Mayank and Test) |
+| POST | `/api/auth/demo` | Public + CSRF | Sign in as demo student `{"account":"mayank"}` or `"bob"` |
+| POST | `/api/auth/logout` | Session + CSRF | Sign out and end session |
+| GET | `/api/me` | Student | Current signed-in student details |
+| GET | `/api/reports` | Public | Public noticeboard (latest 200 reports) |
+| GET | `/api/me/reports` | Student | Reports submitted by current user |
+| POST | `/api/reports` | Student + CSRF | Create a lost or found report |
+| GET | `/api/reports/{id}/matches` | Report owner | Retrieve ranked potential matches |
+| POST | `/api/reports/{id}/claims` | Student other than finder + CSRF | Submit private ownership claim |
+| GET | `/api/me/claims` | Student | Claims submitted by current user |
+
+Public report responses omit user identifiers and private claim details. Claims are stored as plain text and separated by account.
+
+## Production deployment
+
+### Architecture overview
+The application runs as a Docker container on **Render** connected to a managed **Supabase PostgreSQL** database.
+
+### Automated Flyway migrations
+Database schema management is fully automated via Flyway on application bootstrap:
+1. `V1__initial_schema.sql`: creates `app_users`, `reports`, `claims`, constraints and indexes.
+2. `V2__rename_demo_student.sql`: updates demo account display names.
+3. `V3__add_report_subtype.sql`: adds the `subtype` column idempotently (`ADD COLUMN IF NOT EXISTS`), backfills historical rows with category-specific generic fallbacks, enforces `NOT NULL`, and creates `idx_reports_matching_v2`.
+
+The V3 migration is idempotent: if the `subtype` column, constraints or indexes already exist in production, Flyway executes safely, preserves existing subtype values without overwriting them, and records version 3 in `flyway_schema_history`. Unexpected or null categories fail fast.
+
+### Supabase database configuration
+When connecting to Supabase:
+- Use the **Supabase Shared Pooler in Session Mode** on port `5432` (`aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres?sslmode=require`).
+- Do **not** use transaction poolers on port `6543`; Flyway relies on session-level advisory locks (`pg_advisory_lock`), which fail in transaction poolers.
+- The application connects directly using administrative JDBC credentials (`postgres`). In the Supabase Dashboard under **Project Settings &rarr; API**, disable the PostgREST and GraphQL Data APIs or remove `public` from exposed schemas so application tables are never exposed over public HTTP REST endpoints.
+
+### Render environment variables
+Configure the web service on Render with the following environment variables:
+
+| Variable | Value | Description |
+| --- | --- | --- |
+| `SPRING_PROFILES_ACTIVE` | `prod` | Activates production profile |
+| `DB_HOST` | `aws-0-ap-southeast-2.pooler.supabase.com` | Supabase pooler host |
+| `DB_PORT` | `5432` | Session mode port |
+| `DB_NAME` | `postgres` | Database name |
+| `DB_USER` | `postgres.<project-ref>` | Database user (required) |
+| `DB_PASSWORD` | `<secret>` | Database password (required secret) |
+| `DB_PARAMS` | `?sslmode=require` | Enforces SSL encryption in transit |
+| `SEED_DEMO` | `false` | Set `false` in production; `true` seeds sample reports |
+
+Both `DB_USER` and `DB_PASSWORD` are strictly required in `application-prod.properties`; missing credentials fail fast at startup.
+
+### Deploying updates
+1. Commit and push repository changes to GitHub.
+2. Render detects changes to `campus-lost-found/` and triggers a Docker build running `mvn clean verify`.
+3. The container starts, executes Flyway migrations up to the current version, and begins serving requests.
+
+## Session handling and background keep-awake
+
+- In-memory sessions end upon container restart or redeployment. The frontend refreshes expired CSRF tokens automatically and prompts for demo account re-selection if the session has lapsed, preserving open form input.
+- A GitHub Actions workflow (`.github/workflows/keep-site-awake.yml`) pings `/api/health` every 10 minutes (at minutes 03, 13, 23, 33, 43 and 53 UTC) to reduce free-tier container sleep. It performs up to six HTTP GET retries and never mutates data.
